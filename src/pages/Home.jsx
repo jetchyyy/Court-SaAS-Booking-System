@@ -20,6 +20,7 @@ export function Home() {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [activeCourts, setActiveCourts] = useState([]);
     const [courtBookings, setCourtBookings] = useState([]);
+    const [blockedSlots, setBlockedSlots] = useState([]); // **NEW: Admin-blocked slots**
     const [validationError, setValidationError] = useState('');
     const [loading, setLoading] = useState(false);
 
@@ -55,6 +56,7 @@ export function Home() {
     useEffect(() => {
         if (selectedCourt) {
             loadBookings();
+            loadBlockedSlots(); // **NEW: Load blocked slots**
             loadMonthlyBookings(); // Load bookings for entire month for legend
 
             // Subscribe to booking updates for this court
@@ -77,7 +79,6 @@ export function Home() {
         try {
             setLoading(true);
             const dateStr = format(selectedDate, 'yyyy-MM-dd');
-            // Fetch ALL bookings for the day to check for exclusive court conflicts
             const { getDailyBookings } = await import('../services/booking');
             const bookings = await getDailyBookings(dateStr);
             setCourtBookings(bookings || []);
@@ -88,6 +89,32 @@ export function Home() {
         }
     };
 
+    // **NEW: Load admin-blocked slots**
+    const loadBlockedSlots = async () => {
+        if (!selectedCourt) return;
+
+        try {
+            const dateStr = format(selectedDate, 'yyyy-MM-dd');
+            const { supabase } = await import('../lib/supabaseClient');
+            
+            const { data, error } = await supabase
+                .from('blocked_time_slots')
+                .select('time_slot')
+                .eq('court_id', selectedCourt.id)
+                .eq('blocked_date', dateStr);
+
+            if (error) {
+                console.error('Error loading blocked slots:', error);
+                setBlockedSlots([]);
+            } else {
+                setBlockedSlots(data?.map(item => item.time_slot) || []);
+            }
+        } catch (err) {
+            console.error('Error loading blocked slots:', err);
+            setBlockedSlots([]);
+        }
+    };
+
     // Load bookings for the entire month to calculate legend
     const [monthlyBookings, setMonthlyBookings] = useState([]);
 
@@ -95,7 +122,6 @@ export function Home() {
         if (!selectedCourt) return;
 
         try {
-            // Get bookings for the current month
             const startOfMonth = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
             const endOfMonth = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0);
 
@@ -105,7 +131,7 @@ export function Home() {
                 .select('*, courts(id, name, type)')
                 .gte('booking_date', format(startOfMonth, 'yyyy-MM-dd'))
                 .lte('booking_date', format(endOfMonth, 'yyyy-MM-dd'))
-                .in('status', ['Confirmed', 'Rescheduled']); // Include both Confirmed and Rescheduled bookings
+                .in('status', ['Confirmed', 'Rescheduled']);
 
             if (error) {
                 setMonthlyBookings([]);
@@ -118,7 +144,6 @@ export function Home() {
     };
 
     const handleBookClick = (court) => {
-        // Check if court is active
         const isActive = court.is_active !== false;
         if (!isActive) {
             setValidationError("⚠️ This court is currently unavailable for booking.");
@@ -127,13 +152,24 @@ export function Home() {
 
         setSelectedCourt(court);
         setValidationError('');
-        // Scroll to calendar section
+        setSelectedTimes([]); // Clear times when switching courts
         document.getElementById('booking-section')?.scrollIntoView({ behavior: 'smooth' });
+    };
+
+    const handleDateSelect = (date) => {
+        setSelectedDate(date);
+        setSelectedTimes([]); // Clear times when date changes
+        setValidationError('');
     };
 
     // Get booked time slots for the selected date
     const getBookedTimes = () => {
         const bookedSlots = new Set();
+
+        // **NEW: Add admin-blocked slots**
+        blockedSlots.forEach(slot => {
+            bookedSlots.add(slot.substring(0, 5)); // Normalize to HH:MM
+        });
 
         // Block past time slots if selected date is today
         const today = startOfToday();
@@ -142,20 +178,10 @@ export function Home() {
         if (isToday) {
             const now = new Date();
             const currentHour = now.getHours();
-            const currentMinute = now.getMinutes();
 
-            // Block all time slots that have already passed
             for (let hour = 0; hour <= currentHour; hour++) {
-                // If it's the current hour, check if we're past the start of the slot
-                if (hour === currentHour) {
-                    // Block this hour only if we're past the start (e.g., if it's 1:47 AM, block 1:00 AM)
-                    const timeSlot = `${hour.toString().padStart(2, '0')}:00`;
-                    bookedSlots.add(timeSlot);
-                } else {
-                    // Block all previous hours
-                    const timeSlot = `${hour.toString().padStart(2, '0')}:00`;
-                    bookedSlots.add(timeSlot);
-                }
+                const timeSlot = `${hour.toString().padStart(2, '0')}:00`;
+                bookedSlots.add(timeSlot);
             }
         }
 
@@ -167,41 +193,29 @@ export function Home() {
         const isExclusiveSelected = selectedCourt?.type?.includes('Exclusive') || selectedCourt?.type?.includes('Whole');
 
         courtBookings.forEach(booking => {
-            // Check for conflict
             let isConflict = false;
 
-            // 1. Direct conflict: Same court
             if (booking.court_id === selectedCourt.id) {
                 isConflict = true;
-            }
-            // 2. Exclusive Conflict: 
-            // If we selected an Exclusive court, ANY booking on ANY court is a conflict
-            else if (isExclusiveSelected) {
+            } else if (isExclusiveSelected) {
                 isConflict = true;
-            }
-            // 3. Reverse Exclusive Conflict:
-            // If we selected a normal court, but the booking is on an Exclusive court
-            else if (booking.courts?.type?.includes('Exclusive') || booking.courts?.type?.includes('Whole')) {
+            } else if (booking.courts?.type?.includes('Exclusive') || booking.courts?.type?.includes('Whole')) {
                 isConflict = true;
             }
 
             if (isConflict && booking.start_time && booking.end_time) {
-                // Normalize time format: remove seconds if present (10:00:00 -> 10:00)
                 const startTime = booking.start_time.substring(0, 5);
                 const endTime = booking.end_time.substring(0, 5);
 
-                // If booking has specific booked_times array, only block those times
                 if (booking.booked_times && Array.isArray(booking.booked_times) && booking.booked_times.length > 0) {
                     booking.booked_times.forEach(time => {
                         const normalizedTime = time.substring(0, 5);
                         bookedSlots.add(normalizedTime);
                     });
                 } else {
-                    // Fallback: block all hours between start_time and end_time (legacy support)
                     const [startHour, startMin] = startTime.split(':').map(Number);
                     const [endHour, endMin] = endTime.split(':').map(Number);
 
-                    // Add all hours from start to end
                     for (let hour = startHour; hour < endHour; hour++) {
                         const timeSlot = `${hour.toString().padStart(2, '0')}:${startMin.toString().padStart(2, '0')}`;
                         bookedSlots.add(timeSlot);
@@ -217,30 +231,19 @@ export function Home() {
         if (!selectedCourt || !monthlyBookings || monthlyBookings.length === 0) return [];
 
         const isExclusiveSelected = selectedCourt?.type?.includes('Exclusive') || selectedCourt?.type?.includes('Whole');
-
-        // Define all time slots (24 hours)
         const allTimeSlots = Array.from({ length: 24 }, (_, i) => `${i.toString().padStart(2, '0')}:00`);
         const totalSlots = allTimeSlots.length;
-
-        // Group bookings by date
         const bookingsByDate = {};
 
         monthlyBookings.forEach(booking => {
             const bookingDate = booking.booking_date;
-
-            // Check if this booking conflicts with selected court
             let isConflict = false;
 
-            // 1. Direct conflict: Same court
             if (booking.court_id === selectedCourt.id) {
                 isConflict = true;
-            }
-            // 2. Exclusive Conflict
-            else if (isExclusiveSelected) {
+            } else if (isExclusiveSelected) {
                 isConflict = true;
-            }
-            // 3. Reverse Exclusive Conflict
-            else if (booking.courts?.type?.includes('Exclusive') || booking.courts?.type?.includes('Whole')) {
+            } else if (booking.courts?.type?.includes('Exclusive') || booking.courts?.type?.includes('Whole')) {
                 isConflict = true;
             }
 
@@ -250,14 +253,12 @@ export function Home() {
                 bookingsByDate[bookingDate] = new Set();
             }
 
-            // Add booked times to the set
             if (booking.booked_times && Array.isArray(booking.booked_times) && booking.booked_times.length > 0) {
                 booking.booked_times.forEach(time => {
                     const normalizedTime = time.substring(0, 5);
                     bookingsByDate[bookingDate].add(normalizedTime);
                 });
             } else if (booking.start_time && booking.end_time) {
-                // Fallback: use start_time and end_time
                 const startTime = booking.start_time.substring(0, 5);
                 const endTime = booking.end_time.substring(0, 5);
                 const [startHour, startMin] = startTime.split(':').map(Number);
@@ -270,16 +271,13 @@ export function Home() {
             }
         });
 
-        // Determine status for each date
         const dateStatuses = [];
         Object.keys(bookingsByDate).forEach(date => {
             const bookedSlotsCount = bookingsByDate[date].size;
 
             if (bookedSlotsCount >= totalSlots) {
-                // Fully booked
                 dateStatuses.push({ date, status: 'fully-booked' });
             } else if (bookedSlotsCount > 0) {
-                // Partially booked
                 dateStatuses.push({ date, status: 'partially-booked' });
             }
         });
@@ -294,7 +292,6 @@ export function Home() {
         try {
             const { createBooking, uploadProofOfPayment } = await import('../services/booking');
 
-            // Get all selected time slots
             const timeSlots = bookingData.times && bookingData.times.length > 0
                 ? bookingData.times
                 : [bookingData.time];
@@ -303,12 +300,10 @@ export function Home() {
                 throw new Error('No time slots selected');
             }
 
-            // Sort time slots
             const sortedSlots = [...timeSlots].sort();
             const firstSlot = sortedSlots[0];
             const lastSlot = sortedSlots[sortedSlots.length - 1];
 
-            // Calculate start time from first slot
             let startTime = '08:00';
             if (firstSlot && typeof firstSlot === 'string') {
                 if (firstSlot.includes('-')) {
@@ -318,7 +313,6 @@ export function Home() {
                 }
             }
 
-            // Calculate end time from last slot (1 hour after last slot start)
             let endTime = '09:00';
             if (lastSlot && typeof lastSlot === 'string') {
                 let lastSlotTime = lastSlot.trim();
@@ -330,11 +324,9 @@ export function Home() {
                 endTime = `${endHour.toString().padStart(2, '0')}:${minutes}`;
             }
 
-            // Upload proof of payment FIRST if file exists
             let proofOfPaymentUrl = null;
             if (bookingData.paymentProof) {
                 try {
-                    // Use a temporary ID for upload (we'll use the actual booking ID after creation)
                     const tempId = `temp-${Date.now()}`;
                     proofOfPaymentUrl = await uploadProofOfPayment(bookingData.paymentProof, tempId);
 
@@ -346,8 +338,6 @@ export function Home() {
                 }
             }
 
-            // Create a SINGLE booking with booked_times containing the specific slots
-            // and the proof of payment URL already included
             const newBooking = await createBooking({
                 courtId: selectedCourt.id,
                 customerName: bookingData.name,
@@ -359,25 +349,24 @@ export function Home() {
                 totalPrice: bookingData.totalPrice || 0,
                 notes: bookingData.reference || '',
                 proofOfPaymentUrl: proofOfPaymentUrl,
-                bookedTimes: sortedSlots
+                bookedTimes: sortedSlots,
+                courtType: selectedCourt.type
             });
 
             await loadBookings();
             setSelectedTimes([]);
             setIsModalOpen(false);
         } catch (err) {
-            // Reload bookings to show updated availability
             await loadBookings();
 
-            // Check if it's a race condition error (duplicate key constraint)
             let userFriendlyMessage = 'Failed to create booking. Please try again.';
-            if (err.message && err.message.includes('unique constraint')) {
-                userFriendlyMessage = '⚠️ Sorry! One or more selected time slots were just booked by another customer. Please select different times and try again.';
-            } else if (err.message) {
-                userFriendlyMessage = `Error: ${err.message}`;
+            
+            if (err.message) {
+                userFriendlyMessage = `⚠️ ${err.message}`;
             }
 
             setValidationError(userFriendlyMessage);
+            setIsModalOpen(false);
         }
     };
 
@@ -428,20 +417,23 @@ export function Home() {
                     <div className="lg:w-2/3">
                         <BookingCalendar
                             selectedDate={selectedDate}
-                            onDateSelect={setSelectedDate}
+                            onDateSelect={handleDateSelect}
                             selectedTimes={selectedTimes}
                             bookedTimes={bookedTimes}
                             fullyBookedDates={fullyBookedDates}
                             onTimeSelect={(time) => {
-                                // Toggle time selection
+                                if (!selectedCourt) {
+                                    setValidationError("⚠️ Please select a court first before choosing time slots!");
+                                    document.getElementById('courts')?.scrollIntoView({ behavior: 'smooth' });
+                                    return;
+                                }
+
                                 const newTimes = selectedTimes.includes(time)
                                     ? selectedTimes.filter(t => t !== time)
                                     : [...selectedTimes, time];
 
                                 setSelectedTimes(newTimes);
                                 if (newTimes.length > 0) setValidationError('');
-
-                                // Optional: Auto-scroll or hint if needed, but don't force modal open immediately on multi-select
                             }}
                         />
                         <div className="mt-6 flex flex-col items-end gap-2">

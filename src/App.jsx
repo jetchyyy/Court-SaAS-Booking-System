@@ -7,6 +7,7 @@ import { AdminCourts } from './pages/admin/AdminCourts';
 import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { AdminLogin } from './pages/AdminLogin';
 import { ChangePassword } from './pages/admin/AdminChangepassword';
+import {TimeSlotManagement} from './pages/admin/TimeSlotManagement';
 import { Home } from './pages/Home';
 
 function App() {
@@ -24,6 +25,7 @@ function App() {
           <Route path="calendar" element={<AdminCalendar />} />
           <Route path="analytics" element={<AdminAnalytics />} />
           <Route path="change-password" element={<ChangePassword />} />
+          <Route path="time-slots" element={<TimeSlotManagement />} />
         </Route>
       </Routes>
     </BrowserRouter>

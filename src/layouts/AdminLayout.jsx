@@ -1,4 +1,4 @@
-import { BarChart3, Calendar, LayoutDashboard, LogOut, Settings, Users, KeyRound, Menu, X } from 'lucide-react';
+import { BarChart3, Calendar, LayoutDashboard, LogOut, Settings, Users, KeyRound, Menu, X, Lock } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '../components/ui';
@@ -87,6 +87,7 @@ export function AdminLayout() {
         { path: '/admin/dashboard', label: 'Overview', icon: LayoutDashboard },
         { path: '/admin/bookings', label: 'Bookings', icon: Calendar },
         { path: '/admin/courts', label: 'Court Management', icon: Settings },
+        { path: '/admin/time-slots', label: 'Time Slot Control', icon: Lock }, // **NEW**
         { path: '/admin/calendar', label: 'Calendar View', icon: Calendar },
         { path: '/admin/analytics', label: 'Analytics', icon: BarChart3 },
         { path: '/admin/change-password', label: 'Change Password', icon: KeyRound },
