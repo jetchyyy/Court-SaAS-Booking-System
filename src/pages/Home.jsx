@@ -108,7 +108,7 @@ export function Home() {
         try {
             const dateStr = format(selectedDate, 'yyyy-MM-dd');
             const { supabase } = await import('../lib/supabaseClient');
-            
+
             const { data, error } = await supabase
                 .from('blocked_time_slots')
                 .select('time_slot')
@@ -376,8 +376,14 @@ export function Home() {
             // Refresh bookings to show updated availability
             await loadBookings();
 
-            // Re-throw the error so the modal can display it
-            throw err;
+            let userFriendlyMessage = 'Failed to create booking. Please try again.';
+
+            if (err.message) {
+                userFriendlyMessage = `⚠️ ${err.message}`;
+            }
+
+            setValidationError(userFriendlyMessage);
+            setIsModalOpen(false);
         }
     };
 

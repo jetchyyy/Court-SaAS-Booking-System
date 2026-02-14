@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabaseClient';
 // Calculate price based on time-based pricing rules
 export function calculatePriceForSlots(timeSlots, court) {
   if (!timeSlots || timeSlots.length === 0) return court.price;
-  
+
   const pricingRules = court.pricing_rules || [];
   if (pricingRules.length === 0) {
     // No pricing rules, use default rate
@@ -11,18 +11,18 @@ export function calculatePriceForSlots(timeSlots, court) {
   }
 
   let totalPrice = 0;
-  
+
   for (const slot of timeSlots) {
     // Parse slot time (e.g., "10:00" or "10:00-11:00")
     const startTimeStr = slot.includes('-') ? slot.split('-')[0].trim() : slot.trim();
     const [hours] = startTimeStr.split(':').map(Number);
-    
+
     // Find matching pricing rule
     let slotPrice = court.price; // Default to base price
     for (const rule of pricingRules) {
       const startHour = rule.startHour;
       const endHour = rule.endHour;
-      
+
       // Check if hour falls within this pricing rule
       if (startHour <= endHour) {
         // Normal range (e.g., 6-15)
@@ -38,16 +38,41 @@ export function calculatePriceForSlots(timeSlots, court) {
         }
       }
     }
-    
+
     totalPrice += slotPrice;
   }
-  
+
   return totalPrice;
 }
 
 // Upload proof of payment image
+// Upload proof of payment image
 export async function uploadProofOfPayment(file, bookingId) {
   try {
+    // Compress image before uploading
+    let fileToUpload = file;
+
+    // Only compress if it's an image
+    if (file.type.startsWith('image/')) {
+      try {
+        const { default: imageCompression } = await import('browser-image-compression');
+        const options = {
+          maxSizeMB: 1,
+          maxWidthOrHeight: 1920,
+          useWebWorker: true
+        };
+
+        console.log(`Original file size: ${(file.size / 1024 / 1024).toFixed(2)} MB`);
+        const compressedFile = await imageCompression(file, options);
+        console.log(`Compressed file size: ${(compressedFile.size / 1024 / 1024).toFixed(2)} MB`);
+
+        fileToUpload = compressedFile;
+      } catch (compressionError) {
+        console.error('Image compression failed, falling back to original file:', compressionError);
+        // Fallback to original file if compression fails
+      }
+    }
+
     if (!file) {
       throw new Error('No file provided for upload');
     }
@@ -58,7 +83,7 @@ export async function uploadProofOfPayment(file, bookingId) {
 
     const { error: uploadError, data: uploadData } = await supabase.storage
       .from('booking-proofs')
-      .upload(filePath, file);
+      .upload(filePath, fileToUpload);
 
     if (uploadError) {
       throw new Error(`Failed to upload proof of payment: ${uploadError.message}`);
@@ -139,7 +164,7 @@ export async function checkTimeSlotConflicts(courtId, bookingDate, bookedTimes) 
     const conflicts = [];
     for (const booking of existingBookings) {
       const existingTimes = booking.booked_times || [];
-      
+
       for (const requestedTime of bookedTimes) {
         if (existingTimes.includes(requestedTime)) {
           conflicts.push(requestedTime);
@@ -182,7 +207,7 @@ export async function createBooking({
     // Step 2: Check for conflicts BEFORE attempting to book
     console.log('Checking for conflicts...');
     const conflictCheck = await checkTimeSlotConflicts(courtId, bookingDate, bookedTimes);
-    
+
     if (conflictCheck.hasConflict) {
       const conflictTimes = conflictCheck.conflicts.join(', ');
       throw new Error(
@@ -213,7 +238,7 @@ export async function createBooking({
 
     if (error) {
       console.error('Database insert error:', error);
-      
+
       // Handle specific Supabase errors
       if (error.code === '23505') {
         throw new Error('❌ Duplicate booking detected. A booking with these details already exists.');
@@ -224,7 +249,7 @@ export async function createBooking({
       if (error.code === '42501') {
         throw new Error('❌ Permission denied. Please contact support if this issue persists.');
       }
-      
+
       throw new Error(`❌ Booking failed: ${error.message}`);
     }
 
@@ -334,7 +359,7 @@ export async function rescheduleBooking({
 
     // Check for conflicts on the new date/time
     const conflictCheck = await checkTimeSlotConflicts(checkData.court_id, newDate, newBookedTimes);
-    
+
     if (conflictCheck.hasConflict) {
       throw new Error(
         `Time slot conflict on new date. The following times are already booked: ${conflictCheck.conflicts.join(', ')}.`

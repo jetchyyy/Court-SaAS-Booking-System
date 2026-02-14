@@ -5,10 +5,36 @@ export async function uploadCourtImages(files) {
   const results = [];
 
   for (const file of files) {
-    const unique = `${Date.now()}_${file.name}`;
+    let fileToUpload = file;
+
+    // Compress image if it's an image file
+    if (file.type.startsWith('image/')) {
+      try {
+        const { default: imageCompression } = await import('browser-image-compression');
+        const options = {
+          maxSizeMB: 0.5, // Target 500KB
+          maxWidthOrHeight: 1920,
+          useWebWorker: true,
+          initialQuality: 0.8
+        };
+
+        console.log(`Original file size: ${(file.size / 1024 / 1024).toFixed(2)} MB`);
+        const compressedFile = await imageCompression(file, options);
+        console.log(`Compressed file size: ${(compressedFile.size / 1024 / 1024).toFixed(2)} MB`);
+
+        // Ensure the compressed file has a name property for the upload function later if needed, 
+        // though upload usually takes the blob. but we need unique name below.
+        // compressedFile is a Blob/File. 
+        fileToUpload = compressedFile;
+      } catch (err) {
+        console.error('Image compression failed, using original:', err);
+      }
+    }
+
+    const unique = `${Date.now()}_${file.name.replace(/\s+/g, '_')}`; // Sanitize filename too
     const { data, error } = await supabase.storage
       .from('court-images')
-      .upload(unique, file);
+      .upload(unique, fileToUpload);
 
     if (error) {
       console.error('Upload error:', error);
@@ -143,7 +169,7 @@ export async function toggleCourtStatus(courtId, isActive) {
     console.error('toggleCourtStatus error:', error);
     throw error;
   }
-  
+
   if (!data || data.length === 0) {
     console.error('No data returned from update - court may not exist or update failed silently');
     throw new Error('Failed to update court status');
