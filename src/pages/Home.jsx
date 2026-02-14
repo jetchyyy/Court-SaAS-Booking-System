@@ -65,10 +65,22 @@ export function Home() {
                 loadMonthlyBookings();
             });
 
+            // **NEW: Listen for booking conflict events from the modal**
+            const handleBookingConflict = () => {
+                console.log('⚠️ Booking conflict detected - refreshing time slots...');
+                loadBookings();
+                loadMonthlyBookings();
+                // Also clear the selected times since they're now taken
+                setSelectedTimes([]);
+            };
+
+            window.addEventListener('bookingConflict', handleBookingConflict);
+
             return () => {
                 if (subscription) {
                     subscription.unsubscribe();
                 }
+                window.removeEventListener('bookingConflict', handleBookingConflict);
             };
         }
     }, [selectedCourt, selectedDate]);
@@ -353,20 +365,19 @@ export function Home() {
                 courtType: selectedCourt.type
             });
 
+            // **IMPORTANT: Return the booking result to the modal**
             await loadBookings();
             setSelectedTimes([]);
             setIsModalOpen(false);
+            
+            return newBooking; // <-- Return the booking!
+            
         } catch (err) {
+            // Refresh bookings to show updated availability
             await loadBookings();
 
-            let userFriendlyMessage = 'Failed to create booking. Please try again.';
-            
-            if (err.message) {
-                userFriendlyMessage = `⚠️ ${err.message}`;
-            }
-
-            setValidationError(userFriendlyMessage);
-            setIsModalOpen(false);
+            // Re-throw the error so the modal can display it
+            throw err;
         }
     };
 
