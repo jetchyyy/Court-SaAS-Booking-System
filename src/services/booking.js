@@ -73,6 +73,10 @@ export async function uploadProofOfPayment(file, bookingId) {
       }
     }
 
+    if (!file) {
+      throw new Error('No file provided for upload');
+    }
+
     const fileExt = file.name.split('.').pop();
     const fileName = `${bookingId}-${Date.now()}.${fileExt}`;
     const filePath = `booking-proofs/${fileName}`;
@@ -92,8 +96,13 @@ export async function uploadProofOfPayment(file, bookingId) {
 
     const publicUrl = urlData?.publicUrl;
 
+    if (!publicUrl) {
+      throw new Error('Failed to generate public URL for uploaded file');
+    }
+
     return publicUrl;
   } catch (err) {
+    console.error('Upload proof of payment error:', err);
     throw err;
   }
 }
@@ -105,9 +114,10 @@ export async function getCourtBookings(courtId, date) {
     .select('*')
     .eq('court_id', courtId)
     .eq('booking_date', date)
-    .eq('status', 'Confirmed');
+    .in('status', ['Confirmed', 'Rescheduled']);
 
   if (error) {
+    console.error('Error fetching court bookings:', error);
     return [];
   }
 
@@ -130,7 +140,49 @@ export async function getDailyBookings(date) {
   return data;
 }
 
-// Create booking
+// Check for time slot conflicts before booking
+export async function checkTimeSlotConflicts(courtId, bookingDate, bookedTimes) {
+  try {
+    // Get all confirmed bookings for this court and date
+    const { data: existingBookings, error } = await supabase
+      .from('bookings')
+      .select('booked_times, start_time, end_time, id')
+      .eq('court_id', courtId)
+      .eq('booking_date', bookingDate)
+      .in('status', ['Confirmed', 'Rescheduled']);
+
+    if (error) {
+      console.error('Conflict check error:', error);
+      throw new Error(`Failed to check conflicts: ${error.message}`);
+    }
+
+    if (!existingBookings || existingBookings.length === 0) {
+      return { hasConflict: false, conflicts: [] };
+    }
+
+    // Check for overlapping time slots
+    const conflicts = [];
+    for (const booking of existingBookings) {
+      const existingTimes = booking.booked_times || [];
+
+      for (const requestedTime of bookedTimes) {
+        if (existingTimes.includes(requestedTime)) {
+          conflicts.push(requestedTime);
+        }
+      }
+    }
+
+    return {
+      hasConflict: conflicts.length > 0,
+      conflicts: conflicts
+    };
+  } catch (err) {
+    console.error('Error checking time slot conflicts:', err);
+    throw err;
+  }
+}
+
+// Create booking with conflict prevention and verification
 export async function createBooking({
   courtId,
   customerName,
@@ -145,6 +197,27 @@ export async function createBooking({
   bookedTimes = []
 }) {
   try {
+    console.log('Starting booking creation...', { courtId, bookingDate, bookedTimes });
+
+    // Step 1: Validate required fields
+    if (!courtId || !customerName || !customerEmail || !customerPhone || !bookingDate) {
+      throw new Error('Missing required booking information. Please fill in all fields.');
+    }
+
+    // Step 2: Check for conflicts BEFORE attempting to book
+    console.log('Checking for conflicts...');
+    const conflictCheck = await checkTimeSlotConflicts(courtId, bookingDate, bookedTimes);
+
+    if (conflictCheck.hasConflict) {
+      const conflictTimes = conflictCheck.conflicts.join(', ');
+      throw new Error(
+        `❌ Time slot conflict! The following times are already booked: ${conflictTimes}. Please refresh and select different time slots.`
+      );
+    }
+
+    console.log('No conflicts found. Proceeding with booking...');
+
+    // Step 3: Attempt to insert the booking
     const { data, error } = await supabase
       .from('bookings')
       .insert([{
@@ -164,11 +237,53 @@ export async function createBooking({
       .select();
 
     if (error) {
-      throw new Error(`Booking failed: ${error.message}`);
+      console.error('Database insert error:', error);
+
+      // Handle specific Supabase errors
+      if (error.code === '23505') {
+        throw new Error('❌ Duplicate booking detected. A booking with these details already exists.');
+      }
+      if (error.code === 'PGRST116') {
+        throw new Error('❌ Database connection failed. Please check your internet connection and try again.');
+      }
+      if (error.code === '42501') {
+        throw new Error('❌ Permission denied. Please contact support if this issue persists.');
+      }
+
+      throw new Error(`❌ Booking failed: ${error.message}`);
     }
 
-    return data?.[0];
+    // Step 4: Verify the booking was actually created
+    if (!data || data.length === 0) {
+      console.error('No data returned from insert operation');
+      throw new Error('❌ Booking was not created. No data returned from database. Please try again or contact support.');
+    }
+
+    const bookingId = data[0].id;
+    console.log('Booking inserted with ID:', bookingId);
+
+    // Step 5: Double-check the booking exists in the database (verification)
+    console.log('Verifying booking was saved...');
+    const { data: verifyData, error: verifyError } = await supabase
+      .from('bookings')
+      .select('*, courts(name, type)')
+      .eq('id', bookingId)
+      .single();
+
+    if (verifyError) {
+      console.error('Verification error:', verifyError);
+      throw new Error('⚠️ Booking was created but verification failed. Please check your bookings or contact support.');
+    }
+
+    if (!verifyData) {
+      console.error('Verification returned no data');
+      throw new Error('⚠️ Booking verification failed. The booking may not have been saved properly. Please contact support with booking ID: ' + bookingId);
+    }
+
+    console.log('Booking verified successfully:', verifyData);
+    return verifyData;
   } catch (err) {
+    console.error('Create booking error:', err);
     throw err;
   }
 }
@@ -181,6 +296,7 @@ export async function getAllBookings() {
     .order('booking_date', { ascending: false });
 
   if (error) {
+    console.error('Error fetching all bookings:', error);
     return [];
   }
 
@@ -195,7 +311,10 @@ export async function updateBookingStatus(bookingId, status) {
     .eq('id', bookingId)
     .select();
 
-  if (error) throw error;
+  if (error) {
+    console.error('Error updating booking status:', error);
+    throw error;
+  }
 
   return data?.[0];
 }
@@ -226,15 +345,25 @@ export async function rescheduleBooking({
     // First, verify the booking exists and get its current total_price
     const { data: checkData, error: checkError } = await supabase
       .from('bookings')
-      .select('id, status, booking_date, booked_times, total_price')
-      .eq('id', bookingId);
+      .select('id, status, booking_date, booked_times, total_price, court_id')
+      .eq('id', bookingId)
+      .single();
 
     if (checkError) {
       throw new Error(`Failed to verify booking: ${checkError.message}`);
     }
 
-    if (!checkData || checkData.length === 0) {
+    if (!checkData) {
       throw new Error(`Booking with ID ${bookingId} not found`);
+    }
+
+    // Check for conflicts on the new date/time
+    const conflictCheck = await checkTimeSlotConflicts(checkData.court_id, newDate, newBookedTimes);
+
+    if (conflictCheck.hasConflict) {
+      throw new Error(
+        `Time slot conflict on new date. The following times are already booked: ${conflictCheck.conflicts.join(', ')}.`
+      );
     }
 
     // Update the booking with new details and preserve original info
@@ -250,7 +379,7 @@ export async function rescheduleBooking({
         original_start_time: originalStartTime,
         original_end_time: originalEndTime,
         original_booked_times: originalBookedTimes,
-        original_total_price: checkData[0].total_price,
+        original_total_price: checkData.total_price,
         reason: reason,
         rescheduled_at: new Date().toISOString()
       }
@@ -267,11 +396,12 @@ export async function rescheduleBooking({
     }
 
     if (!data || data.length === 0) {
-      throw new Error('Update query returned no rows. Check RLS policies or booking permissions.');
+      throw new Error('Reschedule update returned no data. Please verify the booking was updated.');
     }
 
     return data[0];
   } catch (err) {
+    console.error('Reschedule booking error:', err);
     throw err;
   }
 }

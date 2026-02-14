@@ -1,5 +1,5 @@
 import { format } from 'date-fns';
-import { Calendar, CheckCircle, Clock, CreditCard, QrCode, Upload } from 'lucide-react';
+import { Calendar, CheckCircle, Clock, CreditCard, Upload, AlertCircle, Loader } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { Button } from './ui';
 import { calculatePriceForSlots } from '../services/booking';
@@ -9,6 +9,9 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
     const [formData, setFormData] = useState({ name: '', phone: '', email: '', reference: '', paymentProof: null });
     const [errors, setErrors] = useState({});
     const [paymentMethod, setPaymentMethod] = useState('gcash');
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [submitError, setSubmitError] = useState(null);
+    const [bookingResult, setBookingResult] = useState(null);
 
     // Calculate dynamic price based on time slots and pricing rules
     const getDynamicPrice = () => {
@@ -30,6 +33,9 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
             setFormData({ name: '', phone: '', email: '', reference: '', paymentProof: null });
             setErrors({});
             setPaymentMethod('gcash');
+            setIsSubmitting(false);
+            setSubmitError(null);
+            setBookingResult(null);
         }
     }, [isOpen]);
 
@@ -41,16 +47,18 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
         if (!formData.phone) newErrors.phone = 'Phone number is required';
         else if (formData.phone.length !== 11) newErrors.phone = 'Phone number must be exactly 11 digits';
         if (!formData.email) newErrors.email = 'Email is required';
+        else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) newErrors.email = 'Invalid email format';
 
         if (Object.keys(newErrors).length > 0) {
             setErrors(newErrors);
             return;
         }
         setErrors({});
+        setSubmitError(null);
         setStep(2);
     };
 
-    const handleSubmit = () => {
+    const handleSubmit = async () => {
         const newErrors = {};
         if (!formData.reference) newErrors.reference = 'Last 4 digits are required';
         else if (formData.reference.length !== 4) newErrors.reference = 'Must be exactly 4 digits';
@@ -61,20 +69,52 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
             return;
         }
 
-        // Calculate total price based on time-based pricing rules
-        const totalPrice = calculatePriceForSlots(bookingData.times || [], bookingData.court || {});
+        setIsSubmitting(true);
+        setSubmitError(null);
 
-        onConfirm({
-            ...formData,
-            ...bookingData,
-            totalPrice: totalPrice
-        });
-        setStep(3);
+        try {
+            // Calculate total price based on time-based pricing rules
+            const totalPrice = calculatePriceForSlots(bookingData.times || [], bookingData.court || {});
+
+            // Call the onConfirm handler which should handle the actual booking creation
+            const result = await onConfirm({
+                ...formData,
+                ...bookingData,
+                totalPrice: totalPrice
+            });
+
+            // Store the result for display
+            setBookingResult(result);
+            
+            // Only proceed to success step if we got a valid result
+            if (result && result.id) {
+                setStep(3);
+            } else {
+                throw new Error('Booking creation failed - no booking ID returned');
+            }
+        } catch (error) {
+            console.error('Booking submission error:', error);
+            
+            // Display user-friendly error message
+            const errorMessage = error.message || 'An unexpected error occurred. Please try again.';
+            setSubmitError(errorMessage);
+            
+            // Don't proceed to success step - keep user on payment step
+            // so they can see the error and retry
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const handleClose = () => {
+        if (!isSubmitting) {
+            onClose();
+        }
     };
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="fixed inset-0 bg-black/30 backdrop-blur-sm transition-opacity" onClick={onClose}></div>
+            <div className="fixed inset-0 bg-black/30 backdrop-blur-sm transition-opacity" onClick={handleClose}></div>
 
             <div className="relative bg-white rounded-3xl shadow-2xl max-w-md w-full animate-in fade-in zoom-in duration-200 overflow-hidden max-h-[90vh] flex flex-col">
 
@@ -102,7 +142,7 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
                         <p className="text-gray-500 text-sm mt-1">
                             {step === 1 && "You're almost ready to play!"}
                             {step === 2 && "Scan to pay via GCash or Bank Transfer"}
-                            {step === 3 && "Booking request received"}
+                            {step === 3 && "Booking confirmed successfully"}
                         </p>
                     </div>
                 </div>
@@ -138,7 +178,7 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
                                 </div>
                             </div>
 
-                            <form className="space-y-4">
+                            <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); handleNext(); }}>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
                                     <input
@@ -192,7 +232,7 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
                             </form>
 
                             <div className="flex gap-3 pt-2">
-                                <Button variant="ghost" className="flex-1" onClick={onClose}>Cancel</Button>
+                                <Button variant="ghost" className="flex-1" onClick={handleClose}>Cancel</Button>
                                 <Button className="flex-1 text-white" onClick={handleNext}>Next: Pay</Button>
                             </div>
                         </div>
@@ -202,6 +242,18 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
                         /* STEP 2: Payment */
                         <div className="space-y-6 animate-in slide-in-from-right duration-300">
 
+                            {/* Error Alert */}
+                            {submitError && (
+                                <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex gap-3 animate-in slide-in-from-top duration-200">
+                                    <AlertCircle size={20} className="text-red-600 shrink-0 mt-0.5" />
+                                    <div className="flex-1">
+                                        <p className="text-sm font-semibold text-red-900 mb-1">Booking Error</p>
+                                        <p className="text-xs text-red-800">{submitError}</p>
+                                        <p className="text-xs text-red-700 mt-2">Please try again or contact support if the issue persists.</p>
+                                    </div>
+                                </div>
+                            )}
+
                             {/* QR Code Selection */}
                             <div className="bg-gray-50 rounded-2xl p-4 border border-gray-200">
                                 <p className="text-sm font-medium text-center text-gray-700 mb-4">Scan QR Code to Pay</p>
@@ -210,19 +262,21 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
                                 <div className="grid grid-cols-2 gap-2 mb-4 p-1 bg-gray-200/50 rounded-xl">
                                     <button
                                         onClick={() => setPaymentMethod('gcash')}
+                                        disabled={isSubmitting}
                                         className={`py-2 px-4 rounded-lg text-sm font-medium transition-all duration-200 ${paymentMethod === 'gcash'
                                             ? 'bg-white text-blue-700 shadow-sm'
                                             : 'text-gray-500 hover:text-gray-700'
-                                            }`}
+                                            } ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}
                                     >
                                         GCash
                                     </button>
                                     <button
                                         onClick={() => setPaymentMethod('gotyme')}
+                                        disabled={isSubmitting}
                                         className={`py-2 px-4 rounded-lg text-sm font-medium transition-all duration-200 ${paymentMethod === 'gotyme'
                                             ? 'bg-white text-indigo-700 shadow-sm'
                                             : 'text-gray-500 hover:text-gray-700'
-                                            }`}
+                                            } ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}
                                     >
                                         GoTyme
                                     </button>
@@ -269,12 +323,13 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
                                         type="text"
                                         maxLength={4}
                                         value={formData.reference}
+                                        disabled={isSubmitting}
                                         onChange={(e) => {
                                             const val = e.target.value.replace(/\D/g, '');
                                             setFormData({ ...formData, reference: val });
                                             setErrors({ ...errors, reference: '' });
                                         }}
-                                        className={`w-full px-4 py-2 border ${errors.reference ? 'border-red-500 ring-2 ring-red-100' : 'border-gray-300'} rounded-xl focus:ring-2 focus:ring-brand-green focus:border-brand-green outline-none transition-all font-mono text-center tracking-[0.5em] uppercase text-lg`}
+                                        className={`w-full px-4 py-2 border ${errors.reference ? 'border-red-500 ring-2 ring-red-100' : 'border-gray-300'} rounded-xl focus:ring-2 focus:ring-brand-green focus:border-brand-green outline-none transition-all font-mono text-center tracking-[0.5em] uppercase text-lg ${isSubmitting ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                                         placeholder="0000"
                                     />
                                     {errors.reference && <p className="text-xs text-red-500 mt-1 text-center">{errors.reference}</p>}
@@ -286,6 +341,7 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
                                         <input
                                             type="file"
                                             accept="image/*"
+                                            disabled={isSubmitting}
                                             onChange={(e) => {
                                                 const file = e.target.files[0];
                                                 if (file) {
@@ -298,7 +354,7 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
                                         />
                                         <label
                                             htmlFor="payment-proof-upload"
-                                            className={`flex items-center justify-center gap-2 w-full px-4 py-3 border-2 border-dashed ${errors.paymentProof ? 'border-red-300 bg-red-50' : 'border-gray-300 hover:border-brand-green hover:bg-green-50/50'} rounded-xl cursor-pointer transition-all`}
+                                            className={`flex items-center justify-center gap-2 w-full px-4 py-3 border-2 border-dashed ${errors.paymentProof ? 'border-red-300 bg-red-50' : 'border-gray-300 hover:border-brand-green hover:bg-green-50/50'} rounded-xl ${isSubmitting ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'} transition-all`}
                                         >
                                             <Upload size={18} className={errors.paymentProof ? 'text-red-400' : 'text-gray-400'} />
                                             <span className={`text-sm ${errors.paymentProof ? 'text-red-500' : 'text-gray-500'}`}>
@@ -311,8 +367,28 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
                             </div>
 
                             <div className="flex gap-3 pt-2">
-                                <Button variant="ghost" className="flex-1" onClick={() => setStep(1)}>Back</Button>
-                                <Button className="flex-1 text-white" onClick={handleSubmit}>Submit Booking</Button>
+                                <Button 
+                                    variant="ghost" 
+                                    className="flex-1" 
+                                    onClick={() => setStep(1)}
+                                    disabled={isSubmitting}
+                                >
+                                    Back
+                                </Button>
+                                <Button 
+                                    className="flex-1 text-white" 
+                                    onClick={handleSubmit}
+                                    disabled={isSubmitting}
+                                >
+                                    {isSubmitting ? (
+                                        <span className="flex items-center gap-2">
+                                            <Loader size={16} className="animate-spin" />
+                                            Submitting...
+                                        </span>
+                                    ) : (
+                                        'Submit Booking'
+                                    )}
+                                </Button>
                             </div>
                         </div>
                     )}
@@ -329,18 +405,23 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
                                 <p className="text-gray-600 text-base leading-relaxed">
                                     Thank you for booking with us.
                                 </p>
+                                {bookingResult && bookingResult.id && (
+                                    <p className="text-xs text-gray-400 mt-2">
+                                        Booking ID: {bookingResult.id}
+                                    </p>
+                                )}
                                 <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-xl text-green-700 text-sm">
                                     <p className="font-medium flex items-center justify-center gap-2">
                                         <CheckCircle size={16} /> Status: Confirmed
                                     </p>
                                     <p className="mt-2 text-gray-600">
-                                        Your booking has been confirmed. Please contact us for any inquiries.
+                                        Your booking has been successfully saved to our system. Please contact us for any inquiries.
                                     </p>
                                 </div>
                             </div>
 
                             <div className="pt-4">
-                                <Button size="lg" className="w-full text-white" onClick={onClose}>Done</Button>
+                                <Button size="lg" className="w-full text-white" onClick={handleClose}>Done</Button>
                             </div>
                         </div>
                     )}
