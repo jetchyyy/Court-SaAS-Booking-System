@@ -1,6 +1,6 @@
 import { format } from 'date-fns';
 import { Calendar, CheckCircle, Clock, CreditCard, Upload, AlertCircle, Loader } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Button } from './ui';
 import { calculatePriceForSlots } from '../services/booking';
 
@@ -12,6 +12,7 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [submitError, setSubmitError] = useState(null);
     const [bookingResult, setBookingResult] = useState(null);
+    const prevIsOpen = useRef(isOpen);
 
     // Calculate dynamic price based on time slots and pricing rules
     const getDynamicPrice = () => {
@@ -26,9 +27,11 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
         return `${displayHours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')} ${period}`;
     };
 
-    // Reset step when modal opens/closes
+    // ✅ FIXED: Reset state only when modal transitions from closed to open
     useEffect(() => {
-        if (isOpen) {
+        // Only reset if we're transitioning from closed to open
+        if (isOpen && !prevIsOpen.current) {
+            console.log('Modal opening fresh - resetting to step 1');
             setStep(1);
             setFormData({ name: '', phone: '', email: '', reference: '', paymentProof: null });
             setErrors({});
@@ -37,9 +40,12 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
             setSubmitError(null);
             setBookingResult(null);
         }
+        prevIsOpen.current = isOpen;
     }, [isOpen]);
 
     if (!isOpen) return null;
+
+    console.log('BookingModal render - current step:', step, 'isSubmitting:', isSubmitting);
 
     const handleNext = () => {
         const newErrors = {};
@@ -93,10 +99,12 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
             
             if (bookingId) {
                 console.log('Booking successful with ID:', bookingId);
+                console.log('Setting step to 3 (success screen)...');
                 setStep(3);
             } else {
                 console.error('No booking ID found in result:', result);
                 // Still proceed to success since the logs show it was created
+                console.log('Setting step to 3 anyway (success screen)...');
                 setStep(3);
             }
         } catch (error) {
@@ -109,21 +117,17 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
             if (errorMessage.includes('conflict') || errorMessage.includes('already booked')) {
                 errorMessage = errorMessage + '\n\nPlease select different time slots and try again.';
                 
-                // Trigger parent component to refresh bookings
-                // We'll add an onError callback for this
+                // Dispatch event to tell parent to refresh
                 if (typeof window !== 'undefined') {
-                    // Dispatch custom event to tell parent to refresh
                     window.dispatchEvent(new CustomEvent('bookingConflict'));
                 }
             }
             
             setSubmitError(errorMessage);
             
-            // Keep modal open and go back to step 1 so user can select different times
-            // But keep their form data (name, email, phone, reference, payment proof)
+            // Go back to step 1 so user can select different times
+            // But keep their form data cached
             setStep(1);
-            
-            // Don't proceed to success step - keep user on booking step
         } finally {
             setIsSubmitting(false);
         }
@@ -131,6 +135,12 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
 
     const handleClose = () => {
         if (!isSubmitting) {
+            // Reset everything when closing
+            setStep(1);
+            setFormData({ name: '', phone: '', email: '', reference: '', paymentProof: null });
+            setErrors({});
+            setSubmitError(null);
+            setBookingResult(null);
             onClose();
         }
     };

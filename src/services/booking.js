@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabaseClient';
 // Calculate price based on time-based pricing rules
 export function calculatePriceForSlots(timeSlots, court) {
   if (!timeSlots || timeSlots.length === 0) return court.price;
-
+  
   const pricingRules = court.pricing_rules || [];
   if (pricingRules.length === 0) {
     // No pricing rules, use default rate
@@ -11,18 +11,18 @@ export function calculatePriceForSlots(timeSlots, court) {
   }
 
   let totalPrice = 0;
-
+  
   for (const slot of timeSlots) {
     // Parse slot time (e.g., "10:00" or "10:00-11:00")
     const startTimeStr = slot.includes('-') ? slot.split('-')[0].trim() : slot.trim();
     const [hours] = startTimeStr.split(':').map(Number);
-
+    
     // Find matching pricing rule
     let slotPrice = court.price; // Default to base price
     for (const rule of pricingRules) {
       const startHour = rule.startHour;
       const endHour = rule.endHour;
-
+      
       // Check if hour falls within this pricing rule
       if (startHour <= endHour) {
         // Normal range (e.g., 6-15)
@@ -38,41 +38,16 @@ export function calculatePriceForSlots(timeSlots, court) {
         }
       }
     }
-
+    
     totalPrice += slotPrice;
   }
-
+  
   return totalPrice;
 }
 
 // Upload proof of payment image
-// Upload proof of payment image
 export async function uploadProofOfPayment(file, bookingId) {
   try {
-    // Compress image before uploading
-    let fileToUpload = file;
-
-    // Only compress if it's an image
-    if (file.type.startsWith('image/')) {
-      try {
-        const { default: imageCompression } = await import('browser-image-compression');
-        const options = {
-          maxSizeMB: 1,
-          maxWidthOrHeight: 1920,
-          useWebWorker: true
-        };
-
-        console.log(`Original file size: ${(file.size / 1024 / 1024).toFixed(2)} MB`);
-        const compressedFile = await imageCompression(file, options);
-        console.log(`Compressed file size: ${(compressedFile.size / 1024 / 1024).toFixed(2)} MB`);
-
-        fileToUpload = compressedFile;
-      } catch (compressionError) {
-        console.error('Image compression failed, falling back to original file:', compressionError);
-        // Fallback to original file if compression fails
-      }
-    }
-
     if (!file) {
       throw new Error('No file provided for upload');
     }
@@ -83,7 +58,7 @@ export async function uploadProofOfPayment(file, bookingId) {
 
     const { error: uploadError, data: uploadData } = await supabase.storage
       .from('booking-proofs')
-      .upload(filePath, fileToUpload);
+      .upload(filePath, file);
 
     if (uploadError) {
       throw new Error(`Failed to upload proof of payment: ${uploadError.message}`);
@@ -164,7 +139,7 @@ export async function checkTimeSlotConflicts(courtId, bookingDate, bookedTimes) 
     const conflicts = [];
     for (const booking of existingBookings) {
       const existingTimes = booking.booked_times || [];
-
+      
       for (const requestedTime of bookedTimes) {
         if (existingTimes.includes(requestedTime)) {
           conflicts.push(requestedTime);
@@ -196,96 +171,123 @@ export async function createBooking({
   proofOfPaymentUrl,
   bookedTimes = []
 }) {
-  try {
-    console.log('Starting booking creation...', { courtId, bookingDate, bookedTimes });
-
-    // Step 1: Validate required fields
-    if (!courtId || !customerName || !customerEmail || !customerPhone || !bookingDate) {
-      throw new Error('Missing required booking information. Please fill in all fields.');
-    }
-
-    // Step 2: Check for conflicts BEFORE attempting to book
-    console.log('Checking for conflicts...');
-    const conflictCheck = await checkTimeSlotConflicts(courtId, bookingDate, bookedTimes);
-
-    if (conflictCheck.hasConflict) {
-      const conflictTimes = conflictCheck.conflicts.join(', ');
-      throw new Error(
-        `❌ Time slot conflict! The following times are already booked: ${conflictTimes}. Please refresh and select different time slots.`
-      );
-    }
-
-    console.log('No conflicts found. Proceeding with booking...');
-
-    // Step 3: Attempt to insert the booking
-    const { data, error } = await supabase
-      .from('bookings')
-      .insert([{
-        court_id: courtId,
-        customer_name: customerName,
-        customer_email: customerEmail,
-        customer_phone: customerPhone,
-        booking_date: bookingDate,
-        start_time: startTime,
-        end_time: endTime,
-        total_price: totalPrice || 0,
-        status: 'Confirmed',
-        notes: notes || '',
-        proof_of_payment_url: proofOfPaymentUrl || null,
-        booked_times: bookedTimes.length > 0 ? bookedTimes : null
-      }])
-      .select();
-
-    if (error) {
-      console.error('Database insert error:', error);
-
-      // Handle specific Supabase errors
-      if (error.code === '23505') {
-        throw new Error('❌ Duplicate booking detected. A booking with these details already exists.');
+  // Retry logic for race conditions
+  const maxRetries = 1;
+  let lastError = null;
+  
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      if (attempt > 0) {
+        console.log(`Retry attempt ${attempt} after race condition...`);
+        // Small delay before retry
+        await new Promise(resolve => setTimeout(resolve, 100 + Math.random() * 200));
       }
-      if (error.code === 'PGRST116') {
-        throw new Error('❌ Database connection failed. Please check your internet connection and try again.');
-      }
-      if (error.code === '42501') {
-        throw new Error('❌ Permission denied. Please contact support if this issue persists.');
+      
+      console.log('Starting booking creation...', { courtId, bookingDate, bookedTimes });
+
+      // Step 1: Validate required fields
+      if (!courtId || !customerName || !customerEmail || !customerPhone || !bookingDate) {
+        throw new Error('Missing required booking information. Please fill in all fields.');
       }
 
-      throw new Error(`❌ Booking failed: ${error.message}`);
+      // Step 2: Check for conflicts BEFORE attempting to book
+      console.log('Checking for conflicts...');
+      const conflictCheck = await checkTimeSlotConflicts(courtId, bookingDate, bookedTimes);
+      
+      if (conflictCheck.hasConflict) {
+        const conflictTimes = conflictCheck.conflicts.join(', ');
+        throw new Error(
+          `❌ Time slot conflict! The following times are already booked: ${conflictTimes}. Please refresh and select different time slots.`
+        );
+      }
+
+      console.log('No conflicts found. Proceeding with booking...');
+
+      // Step 3: Attempt to insert the booking
+      const { data, error } = await supabase
+        .from('bookings')
+        .insert([{
+          court_id: courtId,
+          customer_name: customerName,
+          customer_email: customerEmail,
+          customer_phone: customerPhone,
+          booking_date: bookingDate,
+          start_time: startTime,
+          end_time: endTime,
+          total_price: totalPrice || 0,
+          status: 'Confirmed',
+          notes: notes || '',
+          proof_of_payment_url: proofOfPaymentUrl || null,
+          booked_times: bookedTimes.length > 0 ? bookedTimes : null
+        }])
+        .select();
+
+      if (error) {
+        console.error('Database insert error:', error);
+        
+        // Handle specific Supabase errors
+        if (error.code === '23505') {
+          // Race condition - someone booked between our check and insert
+          if (attempt < maxRetries) {
+            lastError = new Error('❌ Time slot conflict! Someone else just booked this time slot. Retrying...');
+            continue; // Retry
+          }
+          throw new Error('❌ Time slot conflict! Someone else just booked this time slot. Please refresh the page and select a different time.');
+        }
+        if (error.code === 'PGRST116') {
+          throw new Error('❌ Database connection failed. Please check your internet connection and try again.');
+        }
+        if (error.code === '42501') {
+          throw new Error('❌ Permission denied. Please contact support if this issue persists.');
+        }
+        
+        throw new Error(`❌ Booking failed: ${error.message}`);
+      }
+
+      // Step 4: Verify the booking was actually created
+      if (!data || data.length === 0) {
+        console.error('No data returned from insert operation');
+        throw new Error('❌ Booking was not created. No data returned from database. Please try again or contact support.');
+      }
+
+      const bookingId = data[0].id;
+      console.log('Booking inserted with ID:', bookingId);
+
+      // Step 5: Double-check the booking exists in the database (verification)
+      console.log('Verifying booking was saved...');
+      const { data: verifyData, error: verifyError } = await supabase
+        .from('bookings')
+        .select('*, courts(name, type)')
+        .eq('id', bookingId)
+        .single();
+
+      if (verifyError) {
+        console.error('Verification error:', verifyError);
+        throw new Error('⚠️ Booking was created but verification failed. Please check your bookings or contact support.');
+      }
+
+      if (!verifyData) {
+        console.error('Verification returned no data');
+        throw new Error('⚠️ Booking verification failed. The booking may not have been saved properly. Please contact support with booking ID: ' + bookingId);
+      }
+
+      console.log('Booking verified successfully:', verifyData);
+      return verifyData;
+      
+    } catch (err) {
+      lastError = err;
+      // If it's not a race condition (23505), throw immediately
+      if (!err.message.includes('Time slot conflict') || attempt === maxRetries) {
+        console.error('Create booking error:', err);
+        throw err;
+      }
+      // Otherwise continue to retry
     }
-
-    // Step 4: Verify the booking was actually created
-    if (!data || data.length === 0) {
-      console.error('No data returned from insert operation');
-      throw new Error('❌ Booking was not created. No data returned from database. Please try again or contact support.');
-    }
-
-    const bookingId = data[0].id;
-    console.log('Booking inserted with ID:', bookingId);
-
-    // Step 5: Double-check the booking exists in the database (verification)
-    console.log('Verifying booking was saved...');
-    const { data: verifyData, error: verifyError } = await supabase
-      .from('bookings')
-      .select('*, courts(name, type)')
-      .eq('id', bookingId)
-      .single();
-
-    if (verifyError) {
-      console.error('Verification error:', verifyError);
-      throw new Error('⚠️ Booking was created but verification failed. Please check your bookings or contact support.');
-    }
-
-    if (!verifyData) {
-      console.error('Verification returned no data');
-      throw new Error('⚠️ Booking verification failed. The booking may not have been saved properly. Please contact support with booking ID: ' + bookingId);
-    }
-
-    console.log('Booking verified successfully:', verifyData);
-    return verifyData;
-  } catch (err) {
-    console.error('Create booking error:', err);
-    throw err;
   }
+  
+  // If we exhausted retries
+  console.error('Create booking error after retries:', lastError);
+  throw lastError;
 }
 
 // Get all bookings (admin)
@@ -359,7 +361,7 @@ export async function rescheduleBooking({
 
     // Check for conflicts on the new date/time
     const conflictCheck = await checkTimeSlotConflicts(checkData.court_id, newDate, newBookedTimes);
-
+    
     if (conflictCheck.hasConflict) {
       throw new Error(
         `Time slot conflict on new date. The following times are already booked: ${conflictCheck.conflicts.join(', ')}.`

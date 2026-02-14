@@ -20,7 +20,7 @@ export function Home() {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [activeCourts, setActiveCourts] = useState([]);
     const [courtBookings, setCourtBookings] = useState([]);
-    const [blockedSlots, setBlockedSlots] = useState([]); // **NEW: Admin-blocked slots**
+    const [blockedSlots, setBlockedSlots] = useState([]);
     const [validationError, setValidationError] = useState('');
     const [loading, setLoading] = useState(false);
 
@@ -28,9 +28,7 @@ export function Home() {
     useEffect(() => {
         loadCourts();
 
-        // Subscribe to court updates
         const subscription = subscribeToCourts((payload) => {
-            // Reload courts immediately when any change occurs
             loadCourts();
         });
 
@@ -44,10 +42,8 @@ export function Home() {
     const loadCourts = async () => {
         try {
             const courts = await listCourts();
-            // Show all courts (including disabled ones)
             setActiveCourts(courts || []);
         } catch (err) {
-            // Fallback to empty array
             setActiveCourts([]);
         }
     };
@@ -56,21 +52,19 @@ export function Home() {
     useEffect(() => {
         if (selectedCourt) {
             loadBookings();
-            loadBlockedSlots(); // **NEW: Load blocked slots**
-            loadMonthlyBookings(); // Load bookings for entire month for legend
+            loadBlockedSlots();
+            loadMonthlyBookings();
 
-            // Subscribe to booking updates for this court
             const subscription = subscribeToBookings((payload) => {
                 loadBookings();
                 loadMonthlyBookings();
             });
 
-            // **NEW: Listen for booking conflict events from the modal**
+            // Listen for booking conflict events from the modal
             const handleBookingConflict = () => {
                 console.log('⚠️ Booking conflict detected - refreshing time slots...');
                 loadBookings();
                 loadMonthlyBookings();
-                // Also clear the selected times since they're now taken
                 setSelectedTimes([]);
             };
 
@@ -101,7 +95,6 @@ export function Home() {
         }
     };
 
-    // **NEW: Load admin-blocked slots**
     const loadBlockedSlots = async () => {
         if (!selectedCourt) return;
 
@@ -127,7 +120,6 @@ export function Home() {
         }
     };
 
-    // Load bookings for the entire month to calculate legend
     const [monthlyBookings, setMonthlyBookings] = useState([]);
 
     const loadMonthlyBookings = async () => {
@@ -164,26 +156,23 @@ export function Home() {
 
         setSelectedCourt(court);
         setValidationError('');
-        setSelectedTimes([]); // Clear times when switching courts
+        setSelectedTimes([]);
         document.getElementById('booking-section')?.scrollIntoView({ behavior: 'smooth' });
     };
 
     const handleDateSelect = (date) => {
         setSelectedDate(date);
-        setSelectedTimes([]); // Clear times when date changes
+        setSelectedTimes([]);
         setValidationError('');
     };
 
-    // Get booked time slots for the selected date
     const getBookedTimes = () => {
         const bookedSlots = new Set();
 
-        // **NEW: Add admin-blocked slots**
         blockedSlots.forEach(slot => {
-            bookedSlots.add(slot.substring(0, 5)); // Normalize to HH:MM
+            bookedSlots.add(slot.substring(0, 5));
         });
 
-        // Block past time slots if selected date is today
         const today = startOfToday();
         const isToday = format(selectedDate, 'yyyy-MM-dd') === format(today, 'yyyy-MM-dd');
 
@@ -197,7 +186,6 @@ export function Home() {
             }
         }
 
-        // Continue with existing booking conflict logic
         if (!courtBookings || courtBookings.length === 0) {
             return Array.from(bookedSlots);
         }
@@ -238,7 +226,6 @@ export function Home() {
         return Array.from(bookedSlots);
     };
 
-    // Get list of fully booked and partially booked dates
     const getFullyBookedDates = () => {
         if (!selectedCourt || !monthlyBookings || monthlyBookings.length === 0) return [];
 
@@ -365,25 +352,16 @@ export function Home() {
                 courtType: selectedCourt.type
             });
 
-            // **IMPORTANT: Return the booking result to the modal**
+            // ✅ FIXED: Don't close modal here - let modal show success screen first!
             await loadBookings();
             setSelectedTimes([]);
-            setIsModalOpen(false);
+            // Removed: setIsModalOpen(false) - Modal closes when user clicks "Done"
             
-            return newBooking; // <-- Return the booking!
+            return newBooking; // Return booking so modal can display it
             
         } catch (err) {
-            // Refresh bookings to show updated availability
-            await loadBookings();
-
-            let userFriendlyMessage = 'Failed to create booking. Please try again.';
-
-            if (err.message) {
-                userFriendlyMessage = `⚠️ ${err.message}`;
-            }
-
-            setValidationError(userFriendlyMessage);
-            setIsModalOpen(false);
+            await loadBookings(); // Refresh on error
+            throw err; // Re-throw so modal can display the error
         }
     };
 
@@ -395,7 +373,6 @@ export function Home() {
 
             <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-24 pb-20">
 
-                {/* Courts Section */}
                 <section id="courts">
                     <div className="text-center max-w-2xl mx-auto mb-12">
                         <h2 className="text-3xl sm:text-4xl font-display font-bold mb-4">Choose Your Court</h2>
@@ -409,7 +386,6 @@ export function Home() {
                     </div>
                 </section>
 
-                {/* Booking Section */}
                 <section id="booking-section" className="bg-white rounded-3xl p-8 shadow-xl border border-gray-100 flex flex-col lg:flex-row gap-12">
                     <div className="lg:w-1/3 space-y-6">
                         <div className="inline-block px-3 py-1 bg-brand-orange-light text-brand-orange text-xs font-bold uppercase tracking-wider rounded-full">
