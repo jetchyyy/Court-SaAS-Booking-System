@@ -187,19 +187,30 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
                         /* STEP 1: Details */
                         <div className="space-y-6 animate-in slide-in-from-right duration-300">
                             
-                            {/* Conflict Error Alert */}
-                            {submitError && (
-                                <div className="bg-red-50 border-2 border-red-300 rounded-xl p-4 flex gap-3 animate-in slide-in-from-top duration-200">
-                                    <AlertCircle size={24} className="text-red-600 shrink-0 mt-0.5" />
-                                    <div className="flex-1">
-                                        <p className="text-sm font-bold text-red-900 mb-1">⚠️ Booking Conflict Detected</p>
-                                        <p className="text-xs text-red-800 whitespace-pre-line">{submitError}</p>
-                                        <p className="text-xs text-red-700 mt-2 font-semibold">
-                                            👇 Please select different time slots below and try again.
-                                        </p>
-                                    </div>
-                                </div>
-                            )}
+                     {/* Conflict Error Alert */}
+{submitError && (
+    <div className="bg-red-50 border-2 border-red-300 rounded-xl p-4 flex gap-3 animate-in slide-in-from-top duration-200">
+        <AlertCircle size={24} className="text-red-600 shrink-0 mt-0.5" />
+        <div className="flex-1">
+            <p className="text-sm font-bold text-red-900 mb-1">⚠️ Booking Conflict Detected</p>
+            <p className="text-xs text-red-800 whitespace-pre-line">{submitError}</p>
+            <div className="mt-3 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                <p className="text-xs font-bold text-orange-900 mb-2">📌 IMPORTANT - Before Selecting Different Times:</p>
+                <ul className="text-xs text-orange-800 space-y-1.5 ml-4">
+                    <li>✓ <strong>Keep the same proof of payment</strong> - Do NOT upload a new screenshot</li>
+                    <li>✓ <strong>Select time slots with the SAME TOTAL PRICE</strong> as what you already paid (₱{getDynamicPrice().toLocaleString()})</li>
+                    <li>✓ <strong>Same number of hours:</strong> You paid for {bookingData.times?.length || 1} hour(s), so select {bookingData.times?.length || 1} slot(s)</li>
+                </ul>
+                <p className="text-xs text-red-700 font-semibold mt-2">
+                    ⚠️ If the price doesn't match what you paid, your booking will be INVALID!
+                </p>
+            </div>
+            <p className="text-xs text-gray-700 mt-3 font-semibold">
+                👇 Select different time slots below, then click "Next: Pay" to continue.
+            </p>
+        </div>
+    </div>
+)}
 
                             <div className="bg-gray-50 rounded-2xl p-4 space-y-3">
                                 <div className="flex justify-between items-center pb-3 border-b border-gray-200 last:border-0 last:pb-0">
