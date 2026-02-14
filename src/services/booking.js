@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabaseClient';
 // Calculate price based on time-based pricing rules
 export function calculatePriceForSlots(timeSlots, court) {
   if (!timeSlots || timeSlots.length === 0) return court.price;
-  
+
   const pricingRules = court.pricing_rules || [];
   if (pricingRules.length === 0) {
     // No pricing rules, use default rate
@@ -11,18 +11,18 @@ export function calculatePriceForSlots(timeSlots, court) {
   }
 
   let totalPrice = 0;
-  
+
   for (const slot of timeSlots) {
     // Parse slot time (e.g., "10:00" or "10:00-11:00")
     const startTimeStr = slot.includes('-') ? slot.split('-')[0].trim() : slot.trim();
     const [hours] = startTimeStr.split(':').map(Number);
-    
+
     // Find matching pricing rule
     let slotPrice = court.price; // Default to base price
     for (const rule of pricingRules) {
       const startHour = rule.startHour;
       const endHour = rule.endHour;
-      
+
       // Check if hour falls within this pricing rule
       if (startHour <= endHour) {
         // Normal range (e.g., 6-15)
@@ -38,23 +38,48 @@ export function calculatePriceForSlots(timeSlots, court) {
         }
       }
     }
-    
+
     totalPrice += slotPrice;
   }
-  
+
   return totalPrice;
 }
 
 // Upload proof of payment image
+// Upload proof of payment image
 export async function uploadProofOfPayment(file, bookingId) {
   try {
+    // Compress image before uploading
+    let fileToUpload = file;
+
+    // Only compress if it's an image
+    if (file.type.startsWith('image/')) {
+      try {
+        const { default: imageCompression } = await import('browser-image-compression');
+        const options = {
+          maxSizeMB: 1,
+          maxWidthOrHeight: 1920,
+          useWebWorker: true
+        };
+
+        console.log(`Original file size: ${(file.size / 1024 / 1024).toFixed(2)} MB`);
+        const compressedFile = await imageCompression(file, options);
+        console.log(`Compressed file size: ${(compressedFile.size / 1024 / 1024).toFixed(2)} MB`);
+
+        fileToUpload = compressedFile;
+      } catch (compressionError) {
+        console.error('Image compression failed, falling back to original file:', compressionError);
+        // Fallback to original file if compression fails
+      }
+    }
+
     const fileExt = file.name.split('.').pop();
     const fileName = `${bookingId}-${Date.now()}.${fileExt}`;
     const filePath = `booking-proofs/${fileName}`;
 
     const { error: uploadError, data: uploadData } = await supabase.storage
       .from('booking-proofs')
-      .upload(filePath, file);
+      .upload(filePath, fileToUpload);
 
     if (uploadError) {
       throw new Error(`Failed to upload proof of payment: ${uploadError.message}`);

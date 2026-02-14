@@ -96,7 +96,7 @@ export function Home() {
         try {
             const dateStr = format(selectedDate, 'yyyy-MM-dd');
             const { supabase } = await import('../lib/supabaseClient');
-            
+
             const { data, error } = await supabase
                 .from('blocked_time_slots')
                 .select('time_slot')
@@ -360,7 +360,7 @@ export function Home() {
             await loadBookings();
 
             let userFriendlyMessage = 'Failed to create booking. Please try again.';
-            
+
             if (err.message) {
                 userFriendlyMessage = `⚠️ ${err.message}`;
             }
