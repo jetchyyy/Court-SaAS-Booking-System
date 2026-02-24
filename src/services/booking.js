@@ -1,9 +1,17 @@
 import { supabase } from '../lib/supabaseClient';
 
+// --- In-memory cache for getAllBookings (admin) ---
+const ALL_BOOKINGS_CACHE_TTL = 30_000; // 30 seconds
+let allBookingsCache = null; // { data, timestamp } | null
+
+export function invalidateAllBookingsCache() {
+  allBookingsCache = null;
+}
+
 // Calculate price based on time-based pricing rules
 export function calculatePriceForSlots(timeSlots, court) {
   if (!timeSlots || timeSlots.length === 0) return court.price;
-  
+
   const pricingRules = court.pricing_rules || [];
   if (pricingRules.length === 0) {
     // No pricing rules, use default rate
@@ -11,18 +19,18 @@ export function calculatePriceForSlots(timeSlots, court) {
   }
 
   let totalPrice = 0;
-  
+
   for (const slot of timeSlots) {
     // Parse slot time (e.g., "10:00" or "10:00-11:00")
     const startTimeStr = slot.includes('-') ? slot.split('-')[0].trim() : slot.trim();
     const [hours] = startTimeStr.split(':').map(Number);
-    
+
     // Find matching pricing rule
     let slotPrice = court.price; // Default to base price
     for (const rule of pricingRules) {
       const startHour = rule.startHour;
       const endHour = rule.endHour;
-      
+
       // Check if hour falls within this pricing rule
       if (startHour <= endHour) {
         // Normal range (e.g., 6-15)
@@ -38,10 +46,10 @@ export function calculatePriceForSlots(timeSlots, court) {
         }
       }
     }
-    
+
     totalPrice += slotPrice;
   }
-  
+
   return totalPrice;
 }
 
@@ -139,7 +147,7 @@ export async function checkTimeSlotConflicts(courtId, bookingDate, bookedTimes) 
     const conflicts = [];
     for (const booking of existingBookings) {
       const existingTimes = booking.booked_times || [];
-      
+
       for (const requestedTime of bookedTimes) {
         if (existingTimes.includes(requestedTime)) {
           conflicts.push(requestedTime);
@@ -174,7 +182,7 @@ export async function createBooking({
   // Retry logic for race conditions
   const maxRetries = 1;
   let lastError = null;
-  
+
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       if (attempt > 0) {
@@ -182,7 +190,7 @@ export async function createBooking({
         // Small delay before retry
         await new Promise(resolve => setTimeout(resolve, 100 + Math.random() * 200));
       }
-      
+
       console.log('Starting booking creation...', { courtId, bookingDate, bookedTimes });
 
       // Step 1: Validate required fields
@@ -193,7 +201,7 @@ export async function createBooking({
       // Step 2: Check for conflicts BEFORE attempting to book
       console.log('Checking for conflicts...');
       const conflictCheck = await checkTimeSlotConflicts(courtId, bookingDate, bookedTimes);
-      
+
       if (conflictCheck.hasConflict) {
         const conflictTimes = conflictCheck.conflicts.join(', ');
         throw new Error(
@@ -224,7 +232,7 @@ export async function createBooking({
 
       if (error) {
         console.error('Database insert error:', error);
-        
+
         // Handle specific Supabase errors
         if (error.code === '23505') {
           // Race condition - someone booked between our check and insert
@@ -240,7 +248,7 @@ export async function createBooking({
         if (error.code === '42501') {
           throw new Error('❌ Permission denied. Please contact support if this issue persists.');
         }
-        
+
         throw new Error(`❌ Booking failed: ${error.message}`);
       }
 
@@ -272,8 +280,9 @@ export async function createBooking({
       }
 
       console.log('Booking verified successfully:', verifyData);
+      invalidateAllBookingsCache();
       return verifyData;
-      
+
     } catch (err) {
       lastError = err;
       // If it's not a race condition (23505), throw immediately
@@ -284,14 +293,20 @@ export async function createBooking({
       // Otherwise continue to retry
     }
   }
-  
+
   // If we exhausted retries
   console.error('Create booking error after retries:', lastError);
   throw lastError;
 }
 
-// Get all bookings (admin)
-export async function getAllBookings() {
+// Get all bookings (admin) — cached
+export async function getAllBookings({ force = false } = {}) {
+  const now = Date.now();
+  if (!force && allBookingsCache && now - allBookingsCache.timestamp < ALL_BOOKINGS_CACHE_TTL) {
+    console.log('[getAllBookings] Returning cached data');
+    return allBookingsCache.data;
+  }
+
   const { data, error } = await supabase
     .from('bookings')
     .select('*, courts(name, type, price, pricing_rules)')
@@ -302,6 +317,7 @@ export async function getAllBookings() {
     return [];
   }
 
+  allBookingsCache = { data, timestamp: now };
   return data;
 }
 
@@ -318,6 +334,7 @@ export async function updateBookingStatus(bookingId, status) {
     throw error;
   }
 
+  invalidateAllBookingsCache();
   return data?.[0];
 }
 
@@ -361,7 +378,7 @@ export async function rescheduleBooking({
 
     // Check for conflicts on the new date/time
     const conflictCheck = await checkTimeSlotConflicts(checkData.court_id, newDate, newBookedTimes);
-    
+
     if (conflictCheck.hasConflict) {
       throw new Error(
         `Time slot conflict on new date. The following times are already booked: ${conflictCheck.conflicts.join(', ')}.`
@@ -401,6 +418,7 @@ export async function rescheduleBooking({
       throw new Error('Reschedule update returned no data. Please verify the booking was updated.');
     }
 
+    invalidateAllBookingsCache();
     return data[0];
   } catch (err) {
     console.error('Reschedule booking error:', err);

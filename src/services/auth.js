@@ -1,14 +1,22 @@
 import { supabase } from '../lib/supabaseClient';
 
+// --- Simple in-memory cache for getCurrentUser ---
+const USER_CACHE_TTL_MS = 60_000; // 60 seconds
+let userCache = null; // { user, timestamp } | null
+
+function invalidateUserCache() {
+  userCache = null;
+}
+
 // Sign up (for admin)
 export async function signUp(email, password) {
   const { data, error } = await supabase.auth.signUp({
     email,
     password
   });
-  
+
   if (error) throw error;
-  
+
   // Optionally add to admin_users table
   if (data.user) {
     await supabase.from('admin_users').insert([{
@@ -16,7 +24,8 @@ export async function signUp(email, password) {
       email: data.user.email
     }]);
   }
-  
+
+  invalidateUserCache();
   return data;
 }
 
@@ -26,23 +35,30 @@ export async function signIn(email, password) {
     email,
     password
   });
-  
+
   if (error) throw error;
-  
+
+  invalidateUserCache();
   return data;
 }
 
 // Sign out
 export async function signOut() {
   const { error } = await supabase.auth.signOut();
-  
+
   if (error) throw error;
+  invalidateUserCache();
 }
 
-// Get current user
+// Get current user (cached)
 export async function getCurrentUser() {
+  const now = Date.now();
+  if (userCache && now - userCache.timestamp < USER_CACHE_TTL_MS) {
+    return userCache.user;
+  }
+
   const { data } = await supabase.auth.getUser();
-  
+  userCache = { user: data.user, timestamp: now };
   return data.user;
 }
 
@@ -54,15 +70,15 @@ export function onAuthStateChange(callback) {
 // Check if user is admin (optional - can expand)
 export async function isAdmin() {
   const user = await getCurrentUser();
-  
+
   if (!user) return false;
-  
+
   const { data } = await supabase
     .from('admin_users')
     .select('*')
     .eq('id', user.id)
     .single();
-  
+
   return !!data;
 }
 
@@ -76,7 +92,7 @@ export async function changePassword(currentPassword, newPassword) {
   try {
     // First, verify the current password by attempting to sign in
     const user = await getCurrentUser();
-    
+
     if (!user || !user.email) {
       throw new Error('No authenticated user found');
     }

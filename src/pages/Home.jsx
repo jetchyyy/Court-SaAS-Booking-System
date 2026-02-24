@@ -1,5 +1,5 @@
 import { startOfToday, format } from 'date-fns';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { BookingCalendar } from '../components/BookingCalendar';
 import { BookingModal } from '../components/BookingModal';
 import { Button } from '../components/ui';
@@ -13,6 +13,28 @@ import { Navbar } from '../components/Navbar';
 import { listCourts, subscribeToCourts } from '../services/courts';
 import { getCourtBookings, subscribeToBookings } from '../services/booking';
 
+// --- Simple in-memory caches for booking data ---
+const BOOKING_CACHE_TTL = 30_000; // 30 seconds
+const bookingCache = {};   // key: `daily-${courtId}-${date}` => { data, timestamp }
+const blockedCache = {};   // key: `blocked-${courtId}-${date}` => { data, timestamp }
+const monthlyCache = {};   // key: `monthly-${courtId}-${yyyy-MM}` => { data, timestamp }
+
+function getCached(cache, key) {
+    const entry = cache[key];
+    if (entry && Date.now() - entry.timestamp < BOOKING_CACHE_TTL) return entry.data;
+    return null;
+}
+
+function setCache(cache, key, data) {
+    cache[key] = { data, timestamp: Date.now() };
+}
+
+function invalidateBookingCaches() {
+    Object.keys(bookingCache).forEach(k => delete bookingCache[k]);
+    Object.keys(blockedCache).forEach(k => delete blockedCache[k]);
+    Object.keys(monthlyCache).forEach(k => delete monthlyCache[k]);
+}
+
 export function Home() {
     const [selectedCourt, setSelectedCourt] = useState(null);
     const [selectedDate, setSelectedDate] = useState(startOfToday());
@@ -24,12 +46,20 @@ export function Home() {
     const [validationError, setValidationError] = useState('');
     const [loading, setLoading] = useState(false);
 
-    // Load courts from Supabase
+    // Load courts from Supabase (uses listCourts cache from courts.js)
     useEffect(() => {
         loadCourts();
 
+        // Patch local state directly from real-time payload instead of re-fetching
         const subscription = subscribeToCourts((payload) => {
-            loadCourts();
+            const { eventType, new: newRecord, old: oldRecord } = payload;
+            if (eventType === 'INSERT') {
+                setActiveCourts(prev => [newRecord, ...prev]);
+            } else if (eventType === 'UPDATE') {
+                setActiveCourts(prev => prev.map(c => c.id === newRecord.id ? newRecord : c));
+            } else if (eventType === 'DELETE') {
+                setActiveCourts(prev => prev.filter(c => c.id !== oldRecord.id));
+            }
         });
 
         return () => {
@@ -56,15 +86,17 @@ export function Home() {
             loadMonthlyBookings();
 
             const subscription = subscribeToBookings((payload) => {
-                loadBookings();
-                loadMonthlyBookings();
+                // Force-refresh on real-time booking events
+                loadBookings({ force: true });
+                loadMonthlyBookings({ force: true });
             });
 
             // Listen for booking conflict events from the modal
             const handleBookingConflict = () => {
                 console.log('⚠️ Booking conflict detected - refreshing time slots...');
-                loadBookings();
-                loadMonthlyBookings();
+                invalidateBookingCaches();
+                loadBookings({ force: true });
+                loadMonthlyBookings({ force: true });
                 setSelectedTimes([]);
             };
 
@@ -79,15 +111,28 @@ export function Home() {
         }
     }, [selectedCourt, selectedDate]);
 
-    const loadBookings = async () => {
+    const loadBookings = async ({ force = false } = {}) => {
         if (!selectedCourt) return;
+
+        const dateStr = format(selectedDate, 'yyyy-MM-dd');
+        const cacheKey = `daily-${selectedCourt.id}-${dateStr}`;
+
+        if (!force) {
+            const cached = getCached(bookingCache, cacheKey);
+            if (cached) {
+                console.log('[Home] Returning cached daily bookings');
+                setCourtBookings(cached);
+                return;
+            }
+        }
 
         try {
             setLoading(true);
-            const dateStr = format(selectedDate, 'yyyy-MM-dd');
             const { getDailyBookings } = await import('../services/booking');
             const bookings = await getDailyBookings(dateStr);
-            setCourtBookings(bookings || []);
+            const result = bookings || [];
+            setCache(bookingCache, cacheKey, result);
+            setCourtBookings(result);
         } catch (err) {
             setCourtBookings([]);
         } finally {
@@ -95,11 +140,22 @@ export function Home() {
         }
     };
 
-    const loadBlockedSlots = async () => {
+    const loadBlockedSlots = async ({ force = false } = {}) => {
         if (!selectedCourt) return;
 
+        const dateStr = format(selectedDate, 'yyyy-MM-dd');
+        const cacheKey = `blocked-${selectedCourt.id}-${dateStr}`;
+
+        if (!force) {
+            const cached = getCached(blockedCache, cacheKey);
+            if (cached) {
+                console.log('[Home] Returning cached blocked slots');
+                setBlockedSlots(cached);
+                return;
+            }
+        }
+
         try {
-            const dateStr = format(selectedDate, 'yyyy-MM-dd');
             const { supabase } = await import('../lib/supabaseClient');
 
             const { data, error } = await supabase
@@ -112,7 +168,9 @@ export function Home() {
                 console.error('Error loading blocked slots:', error);
                 setBlockedSlots([]);
             } else {
-                setBlockedSlots(data?.map(item => item.time_slot) || []);
+                const result = data?.map(item => item.time_slot) || [];
+                setCache(blockedCache, cacheKey, result);
+                setBlockedSlots(result);
             }
         } catch (err) {
             console.error('Error loading blocked slots:', err);
@@ -122,8 +180,20 @@ export function Home() {
 
     const [monthlyBookings, setMonthlyBookings] = useState([]);
 
-    const loadMonthlyBookings = async () => {
+    const loadMonthlyBookings = async ({ force = false } = {}) => {
         if (!selectedCourt) return;
+
+        const monthKey = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}`;
+        const cacheKey = `monthly-${selectedCourt.id}-${monthKey}`;
+
+        if (!force) {
+            const cached = getCached(monthlyCache, cacheKey);
+            if (cached) {
+                console.log('[Home] Returning cached monthly bookings');
+                setMonthlyBookings(cached);
+                return;
+            }
+        }
 
         try {
             const startOfMonth = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
@@ -140,7 +210,9 @@ export function Home() {
             if (error) {
                 setMonthlyBookings([]);
             } else {
-                setMonthlyBookings(data || []);
+                const result = data || [];
+                setCache(monthlyCache, cacheKey, result);
+                setMonthlyBookings(result);
             }
         } catch (err) {
             setMonthlyBookings([]);
@@ -353,14 +425,16 @@ export function Home() {
             });
 
             // ✅ FIXED: Don't close modal here - let modal show success screen first!
-            await loadBookings();
+            invalidateBookingCaches();
+            await loadBookings({ force: true });
             setSelectedTimes([]);
             // Removed: setIsModalOpen(false) - Modal closes when user clicks "Done"
-            
+
             return newBooking; // Return booking so modal can display it
-            
+
         } catch (err) {
-            await loadBookings(); // Refresh on error
+            invalidateBookingCaches();
+            await loadBookings({ force: true }); // Refresh on error
             throw err; // Re-throw so modal can display the error
         }
     };

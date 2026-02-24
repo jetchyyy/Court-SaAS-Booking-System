@@ -10,6 +10,7 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
     const [errors, setErrors] = useState({});
     const [paymentMethod, setPaymentMethod] = useState('gcash');
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isCompressing, setIsCompressing] = useState(false);
     const [submitError, setSubmitError] = useState(null);
     const [bookingResult, setBookingResult] = useState(null);
     const prevIsOpen = useRef(isOpen);
@@ -93,10 +94,10 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
 
             // Store the result for display
             setBookingResult(result);
-            
+
             // Check if result is valid - it could be the booking object directly or wrapped
             const bookingId = result?.id || result?.data?.id || result?.[0]?.id;
-            
+
             if (bookingId) {
                 console.log('Booking successful with ID:', bookingId);
                 console.log('Setting step to 3 (success screen)...');
@@ -109,22 +110,22 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
             }
         } catch (error) {
             console.error('Booking submission error:', error);
-            
+
             // Display user-friendly error message
             let errorMessage = error.message || 'An unexpected error occurred. Please try again.';
-            
+
             // Check if it's a conflict error - ask parent to refresh time slots
             if (errorMessage.includes('conflict') || errorMessage.includes('already booked')) {
                 errorMessage = errorMessage + '\n\nPlease select different time slots and try again.';
-                
+
                 // Dispatch event to tell parent to refresh
                 if (typeof window !== 'undefined') {
                     window.dispatchEvent(new CustomEvent('bookingConflict'));
                 }
             }
-            
+
             setSubmitError(errorMessage);
-            
+
             // Go back to step 1 so user can select different times
             // But keep their form data cached
             setStep(1);
@@ -186,31 +187,31 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
                     {step === 1 && (
                         /* STEP 1: Details */
                         <div className="space-y-6 animate-in slide-in-from-right duration-300">
-                            
-                     {/* Conflict Error Alert */}
-{submitError && (
-    <div className="bg-red-50 border-2 border-red-300 rounded-xl p-4 flex gap-3 animate-in slide-in-from-top duration-200">
-        <AlertCircle size={24} className="text-red-600 shrink-0 mt-0.5" />
-        <div className="flex-1">
-            <p className="text-sm font-bold text-red-900 mb-1">⚠️ Booking Conflict Detected</p>
-            <p className="text-xs text-red-800 whitespace-pre-line">{submitError}</p>
-            <div className="mt-3 p-3 bg-orange-50 border border-orange-200 rounded-lg">
-                <p className="text-xs font-bold text-orange-900 mb-2">📌 IMPORTANT - Before Selecting Different Times:</p>
-                <ul className="text-xs text-orange-800 space-y-1.5 ml-4">
-                    <li>✓ <strong>Keep the same proof of payment</strong> - Do NOT upload a new screenshot</li>
-                    <li>✓ <strong>Select time slots with the SAME TOTAL PRICE</strong> as what you already paid (₱{getDynamicPrice().toLocaleString()})</li>
-                    <li>✓ <strong>Same number of hours:</strong> You paid for {bookingData.times?.length || 1} hour(s), so select {bookingData.times?.length || 1} slot(s)</li>
-                </ul>
-                <p className="text-xs text-red-700 font-semibold mt-2">
-                    ⚠️ If the price doesn't match what you paid, your booking will be INVALID!
-                </p>
-            </div>
-            <p className="text-xs text-gray-700 mt-3 font-semibold">
-                👇 Select different time slots below, then click "Next: Pay" to continue.
-            </p>
-        </div>
-    </div>
-)}
+
+                            {/* Conflict Error Alert */}
+                            {submitError && (
+                                <div className="bg-red-50 border-2 border-red-300 rounded-xl p-4 flex gap-3 animate-in slide-in-from-top duration-200">
+                                    <AlertCircle size={24} className="text-red-600 shrink-0 mt-0.5" />
+                                    <div className="flex-1">
+                                        <p className="text-sm font-bold text-red-900 mb-1">⚠️ Booking Conflict Detected</p>
+                                        <p className="text-xs text-red-800 whitespace-pre-line">{submitError}</p>
+                                        <div className="mt-3 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                                            <p className="text-xs font-bold text-orange-900 mb-2">📌 IMPORTANT - Before Selecting Different Times:</p>
+                                            <ul className="text-xs text-orange-800 space-y-1.5 ml-4">
+                                                <li>✓ <strong>Keep the same proof of payment</strong> - Do NOT upload a new screenshot</li>
+                                                <li>✓ <strong>Select time slots with the SAME TOTAL PRICE</strong> as what you already paid (₱{getDynamicPrice().toLocaleString()})</li>
+                                                <li>✓ <strong>Same number of hours:</strong> You paid for {bookingData.times?.length || 1} hour(s), so select {bookingData.times?.length || 1} slot(s)</li>
+                                            </ul>
+                                            <p className="text-xs text-red-700 font-semibold mt-2">
+                                                ⚠️ If the price doesn't match what you paid, your booking will be INVALID!
+                                            </p>
+                                        </div>
+                                        <p className="text-xs text-gray-700 mt-3 font-semibold">
+                                            👇 Select different time slots below, then click "Next: Pay" to continue or Contact our Social Media Platforms.
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
 
                             <div className="bg-gray-50 rounded-2xl p-4 space-y-3">
                                 <div className="flex justify-between items-center pb-3 border-b border-gray-200 last:border-0 last:pb-0">
@@ -400,10 +401,38 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
                                         <input
                                             type="file"
                                             accept="image/*"
-                                            disabled={isSubmitting}
-                                            onChange={(e) => {
+                                            disabled={isSubmitting || isCompressing}
+                                            onChange={async (e) => {
                                                 const file = e.target.files[0];
-                                                if (file) {
+                                                if (!file) return;
+
+                                                // Only compress image files
+                                                if (file.type.startsWith('image/')) {
+                                                    setIsCompressing(true);
+                                                    try {
+                                                        const { default: imageCompression } = await import('browser-image-compression');
+                                                        const options = {
+                                                            maxSizeMB: 0.4,          // Target ≤400KB
+                                                            maxWidthOrHeight: 1920,
+                                                            useWebWorker: true,
+                                                            initialQuality: 0.8,
+                                                        };
+                                                        console.log(`[Receipt] Original: ${file.name} (${(file.size / 1024).toFixed(0)} KB)`);
+                                                        const compressed = await imageCompression(file, options);
+                                                        console.log(`[Receipt] Compressed: ${(compressed.size / 1024).toFixed(0)} KB`);
+
+                                                        // Preserve the original filename for display
+                                                        const compressedFile = new File([compressed], file.name, { type: compressed.type });
+                                                        setFormData({ ...formData, paymentProof: compressedFile });
+                                                        setErrors({ ...errors, paymentProof: '' });
+                                                    } catch (err) {
+                                                        console.error('[Receipt] Compression failed, using original:', err);
+                                                        setFormData({ ...formData, paymentProof: file });
+                                                        setErrors({ ...errors, paymentProof: '' });
+                                                    } finally {
+                                                        setIsCompressing(false);
+                                                    }
+                                                } else {
                                                     setFormData({ ...formData, paymentProof: file });
                                                     setErrors({ ...errors, paymentProof: '' });
                                                 }
@@ -413,12 +442,23 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
                                         />
                                         <label
                                             htmlFor="payment-proof-upload"
-                                            className={`flex items-center justify-center gap-2 w-full px-4 py-3 border-2 border-dashed ${errors.paymentProof ? 'border-red-300 bg-red-50' : 'border-gray-300 hover:border-brand-green hover:bg-green-50/50'} rounded-xl ${isSubmitting ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'} transition-all`}
+                                            className={`flex items-center justify-center gap-2 w-full px-4 py-3 border-2 border-dashed ${errors.paymentProof ? 'border-red-300 bg-red-50' : 'border-gray-300 hover:border-brand-green hover:bg-green-50/50'} rounded-xl ${(isSubmitting || isCompressing) ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'} transition-all`}
                                         >
-                                            <Upload size={18} className={errors.paymentProof ? 'text-red-400' : 'text-gray-400'} />
-                                            <span className={`text-sm ${errors.paymentProof ? 'text-red-500' : 'text-gray-500'}`}>
-                                                {formData.paymentProof ? formData.paymentProof.name : 'Click to upload screenshot'}
-                                            </span>
+                                            {isCompressing ? (
+                                                <>
+                                                    <Loader size={18} className="animate-spin text-brand-green" />
+                                                    <span className="text-sm text-brand-green-dark font-medium">Compressing image…</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Upload size={18} className={errors.paymentProof ? 'text-red-400' : 'text-gray-400'} />
+                                                    <span className={`text-sm ${errors.paymentProof ? 'text-red-500' : 'text-gray-500'}`}>
+                                                        {formData.paymentProof
+                                                            ? `${formData.paymentProof.name} (${(formData.paymentProof.size / 1024).toFixed(0)} KB)`
+                                                            : 'Click to upload screenshot'}
+                                                    </span>
+                                                </>
+                                            )}
                                         </label>
                                     </div>
                                     {errors.paymentProof && <p className="text-xs text-red-500 mt-1 text-center">{errors.paymentProof}</p>}
@@ -426,16 +466,16 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
                             </div>
 
                             <div className="flex gap-3 pt-2">
-                                <Button 
-                                    variant="ghost" 
-                                    className="flex-1" 
+                                <Button
+                                    variant="ghost"
+                                    className="flex-1"
                                     onClick={() => setStep(1)}
                                     disabled={isSubmitting}
                                 >
                                     Back
                                 </Button>
-                                <Button 
-                                    className="flex-1 text-white" 
+                                <Button
+                                    className="flex-1 text-white"
                                     onClick={handleSubmit}
                                     disabled={isSubmitting}
                                 >

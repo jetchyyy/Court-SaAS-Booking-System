@@ -36,10 +36,17 @@ export function AdminCourts() {
     useEffect(() => {
         loadCourts();
 
-        // Subscribe to real-time updates
+        // Subscribe to real-time updates — patch local state directly instead of re-fetching
         const subscription = subscribeToCourts((payload) => {
             console.log('Court update received:', payload);
-            loadCourts();
+            const { eventType, new: newRecord, old: oldRecord } = payload;
+            if (eventType === 'INSERT') {
+                setCourts(prev => [newRecord, ...prev]);
+            } else if (eventType === 'UPDATE') {
+                setCourts(prev => prev.map(c => c.id === newRecord.id ? newRecord : c));
+            } else if (eventType === 'DELETE') {
+                setCourts(prev => prev.filter(c => c.id !== oldRecord.id));
+            }
         });
 
         return () => {
@@ -49,9 +56,9 @@ export function AdminCourts() {
         };
     }, []);
 
-    const loadCourts = async () => {
+    const loadCourts = async ({ force = false } = {}) => {
         try {
-            const data = await listCourts();
+            const data = await listCourts({ force });
             setCourts(data || []);
         } catch (err) {
             console.error('Error loading courts:', err);
@@ -107,7 +114,7 @@ export function AdminCourts() {
                 });
             }
 
-            await loadCourts();
+            await loadCourts({ force: true });
             resetForm();
         } catch (err) {
             console.error('Error saving court:', err);
@@ -171,7 +178,7 @@ export function AdminCourts() {
             successDescription: `${court.name} has been ${newStatus ? 'enabled' : 'disabled'}.`,
             action: async () => {
                 await toggleCourtStatus(court.id, newStatus);
-                await loadCourts();
+                await loadCourts({ force: true });
             }
         });
     };
@@ -187,7 +194,7 @@ export function AdminCourts() {
             successDescription: 'The court has been successfully removed.',
             action: async () => {
                 await deleteCourt(court.id);
-                await loadCourts();
+                await loadCourts({ force: true });
             }
         });
     };
@@ -341,11 +348,6 @@ export function AdminCourts() {
                                 {formData.pricingRules && formData.pricingRules.length > 0 ? (
                                     <div className="space-y-3 max-h-48 overflow-y-auto">
                                         {formData.pricingRules.map((rule, index) => {
-                                            const formatHour12 = (hour) => {
-                                                const period = hour >= 12 ? 'PM' : 'AM';
-                                                const displayHour = hour === 0 ? 12 : (hour > 12 ? hour - 12 : hour);
-                                                return `${displayHour.toString().padStart(2, '0')}:00 ${period}`;
-                                            };
                                             return (
                                                 <div key={index} className="flex gap-2 items-end p-3 bg-gray-50 rounded-lg">
                                                     <div className="flex-1">

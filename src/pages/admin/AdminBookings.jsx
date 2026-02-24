@@ -5,7 +5,7 @@ import { Badge, Button, Pagination } from '../../components/ui';
 import { BookingDetailsModal } from '../../components/admin/BookingDetailsModal';
 import { RescheduleModal } from '../../components/admin/Reschedulemodal';
 import { AdminActionModal } from '../../components/admin/AdminActionModal';
-import { getAllBookings, updateBookingStatus, subscribeToBookings, rescheduleBooking } from '../../services/booking';
+import { getAllBookings, updateBookingStatus, subscribeToBookings, rescheduleBooking, invalidateAllBookingsCache } from '../../services/booking';
 import { supabase } from '../../lib/supabaseClient';
 
 export function AdminBookings() {
@@ -47,9 +47,9 @@ export function AdminBookings() {
     useEffect(() => {
         loadBookings();
 
-        // Subscribe to real-time booking updates
+        // Subscribe to real-time booking updates — force-refresh to bypass cache
         const subscription = subscribeToBookings((payload) => {
-            loadBookings();
+            loadBookings({ force: true });
         });
 
         return () => {
@@ -64,10 +64,10 @@ export function AdminBookings() {
         setCurrentPage(1);
     }, [searchTerm, filterStatus]);
 
-    const loadBookings = async () => {
+    const loadBookings = async ({ force = false } = {}) => {
         try {
             setLoading(true);
-            const bookingsData = await getAllBookings();
+            const bookingsData = await getAllBookings({ force });
             setBookings(bookingsData || []);
         } catch (err) {
             console.error('Error loading bookings:', err);
@@ -89,7 +89,7 @@ export function AdminBookings() {
                 successDescription: 'The booking has been successfully cancelled.',
                 action: async () => {
                     await updateBookingStatus(id, newStatus);
-                    await loadBookings();
+                    await loadBookings({ force: true });
                 }
             });
             return;
@@ -97,7 +97,7 @@ export function AdminBookings() {
 
         try {
             await updateBookingStatus(id, newStatus);
-            await loadBookings();
+            await loadBookings({ force: true });
         } catch (err) {
             console.error('Error updating booking status:', err);
             alert('Failed to update booking status');
@@ -115,13 +115,13 @@ export function AdminBookings() {
     const handleRescheduleConfirm = async (rescheduleData) => {
         try {
             const result = await rescheduleBooking(rescheduleData);
-            
+
             if (!result) {
                 throw new Error('Reschedule returned no data');
             }
-            
-            await loadBookings();
-            
+
+            await loadBookings({ force: true });
+
             // Show success message
             setActionModal({
                 isOpen: true,
@@ -135,7 +135,7 @@ export function AdminBookings() {
                     // Just close the modal
                 }
             });
-            
+
             setIsRescheduleModalOpen(false);
             setSelectedBooking(null);
         } catch (error) {
@@ -168,7 +168,7 @@ export function AdminBookings() {
                         throw new Error('Booking not found or delete permission denied. Check RLS policies.');
                     }
 
-                    await loadBookings();
+                    await loadBookings({ force: true });
                 } catch (err) {
                     alert('Failed to delete booking: ' + err.message);
                     throw err;
