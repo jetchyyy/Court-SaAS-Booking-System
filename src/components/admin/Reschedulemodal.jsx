@@ -91,8 +91,10 @@ export function RescheduleModal({ isOpen, onClose, booking, onConfirm }) {
             if (isConflict && courtBooking.start_time && courtBooking.end_time) {
                 if (courtBooking.booked_times && Array.isArray(courtBooking.booked_times) && courtBooking.booked_times.length > 0) {
                     courtBooking.booked_times.forEach(time => {
-                        const normalizedTime = time.substring(0, 5);
-                        bookedSlots.add(normalizedTime);
+                        if (time && typeof time === 'string') {
+                            const normalizedTime = time.substring(0, 5);
+                            bookedSlots.add(normalizedTime);
+                        }
                     });
                 } else {
                     const startTime = courtBooking.start_time.substring(0, 5);
@@ -125,7 +127,7 @@ export function RescheduleModal({ isOpen, onClose, booking, onConfirm }) {
 
         const customerName = booking.customer_name;
         const courtName = booking.courts?.name || 'Court';
-        
+
         // Original date and times
         const originalDate = format(new Date(booking.booking_date), 'MMM d, yyyy');
         const originalTimes = booking.booked_times && booking.booked_times.length > 0
@@ -262,16 +264,15 @@ export function RescheduleModal({ isOpen, onClose, booking, onConfirm }) {
                                 <h3 className="text-lg font-semibold text-gray-900 mb-4">
                                     Why are you rescheduling this booking?
                                 </h3>
-                                
+
                                 <div className="space-y-3">
                                     {rescheduleReasons.map((reasonOption) => (
                                         <label
                                             key={reasonOption}
-                                            className={`flex items-center gap-3 p-4 border-2 rounded-xl cursor-pointer transition-all ${
-                                                reason === reasonOption
+                                            className={`flex items-center gap-3 p-4 border-2 rounded-xl cursor-pointer transition-all ${reason === reasonOption
                                                     ? 'border-brand-orange bg-orange-50'
                                                     : 'border-gray-200 hover:border-gray-300'
-                                            }`}
+                                                }`}
                                         >
                                             <input
                                                 type="radio"
@@ -480,11 +481,10 @@ export function RescheduleModal({ isOpen, onClose, booking, onConfirm }) {
                                         />
                                         <button
                                             onClick={handleCopySMS}
-                                            className={`absolute top-2 right-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
-                                                copied
+                                            className={`absolute top-2 right-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${copied
                                                     ? 'bg-green-100 text-green-700'
                                                     : 'bg-brand-orange text-white hover:bg-brand-orange/90'
-                                            }`}
+                                                }`}
                                         >
                                             {copied ? (
                                                 <>

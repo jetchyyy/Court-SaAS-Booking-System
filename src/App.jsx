@@ -10,10 +10,15 @@ import { AdminLogin } from './pages/AdminLogin';
 import { ChangePassword } from './pages/admin/AdminChangepassword';
 import { TimeSlotManagement } from './pages/admin/TimeSlotManagement';
 import { Home } from './pages/Home';
+import { SplashScreen } from './components/SplashScreen';
+import { useState } from 'react';
 
 function App() {
+  const [showSplash, setShowSplash] = useState(true);
+
   return (
     <QueryProvider>
+      {showSplash && <SplashScreen onComplete={() => setShowSplash(false)} />}
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Home />} />

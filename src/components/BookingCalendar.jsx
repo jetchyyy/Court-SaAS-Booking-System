@@ -57,13 +57,13 @@ export function BookingCalendar({ selectedDate, onDateSelect, selectedTimes = []
     const getDateNote = (slotId) => {
         const hour = parseInt(slotId.split(':')[0]);
         const nextDay = addDays(selectedDate, 1);
-        
+
         // 11PM-12AM (23:00) - ends on next day
         if (hour === 23) {
             return `Ends on ${format(nextDay, 'MMM dd')}`;
         }
         // 12AM-6AM (00:00-05:00) - is on next day
-        
+
         return null;
     };
 
@@ -201,7 +201,7 @@ export function BookingCalendar({ selectedDate, onDateSelect, selectedTimes = []
                 <div className="space-y-6">
                     {/* Time Sections */}
                     {[
-                        { title: 'Early Morning (12AM - 5AM)', range: [0, 1, 2, 3, 4, 5], note: 'Strictly no Walk-ins' },
+                        { title: 'Early Morning (12AM - 5AM)', range: [0, 1, 2, 3, 4, 5], note: 'Strictly No Walk-ins 12AM - 5AM' },
                         { title: 'Morning (6AM - 11AM)', range: [6, 7, 8, 9, 10, 11] },
                         { title: 'Afternoon (12PM - 5PM)', range: [12, 13, 14, 15, 16, 17] },
                         { title: 'Evening (6PM - 11PM)', range: [18, 19, 20, 21, 22, 23] },
@@ -229,7 +229,7 @@ export function BookingCalendar({ selectedDate, onDateSelect, selectedTimes = []
                                         const isSelected = selectedTimes.includes(slot.id);
                                         const isBooked = bookedTimes.includes(slot.id);
                                         const dateNote = getDateNote(slot.id);
-                                        
+
                                         return (
                                             <button
                                                 key={slot.id}

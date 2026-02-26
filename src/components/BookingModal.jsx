@@ -2,7 +2,7 @@ import { format } from 'date-fns';
 import { Calendar, CheckCircle, Clock, CreditCard, Upload, AlertCircle, Loader } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { Button } from './ui';
-import { calculatePriceForSlots } from '../services/booking';
+import { calculatePriceForSlots, checkTimeSlotConflicts } from '../services/booking';
 
 export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
     const [step, setStep] = useState(1);
@@ -12,8 +12,10 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isCompressing, setIsCompressing] = useState(false);
     const [submitError, setSubmitError] = useState(null);
+    const [showConflictModal, setShowConflictModal] = useState(false); // Blocking conflict overlay
     const [bookingResult, setBookingResult] = useState(null);
     const prevIsOpen = useRef(isOpen);
+    const isSubmittingRef = useRef(false); // Synchronous guard for double-submit (Bug 5)
 
     // Calculate dynamic price based on time slots and pricing rules
     const getDynamicPrice = () => {
@@ -38,7 +40,9 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
             setErrors({});
             setPaymentMethod('gcash');
             setIsSubmitting(false);
+            isSubmittingRef.current = false; // Reset synchronous guard
             setSubmitError(null);
+            setShowConflictModal(false);
             setBookingResult(null);
         }
         prevIsOpen.current = isOpen;
@@ -76,10 +80,33 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
             return;
         }
 
+        // Bug 5 fix: Synchronous guard prevents double-submit
+        if (isSubmittingRef.current) {
+            console.log('Submit already in progress (ref guard), ignoring duplicate click');
+            return;
+        }
+        isSubmittingRef.current = true;
         setIsSubmitting(true);
         setSubmitError(null);
 
         try {
+            // Bug 4 fix: Fresh conflict check before submitting (bypasses stale cache)
+            if (bookingData.court && bookingData.times?.length > 0) {
+                console.log('Running fresh conflict check before submit...');
+                const freshCheck = await checkTimeSlotConflicts(
+                    bookingData.court.id,
+                    bookingData.date ? format(bookingData.date, 'yyyy-MM-dd') : null,
+                    bookingData.times,
+                    { courtType: bookingData.court.type || '' }
+                );
+
+                if (freshCheck.hasConflict) {
+                    const conflictTimes = freshCheck.conflicts.join(', ');
+                    throw new Error(
+                        `❌ Time slot conflict! The following times were just booked by someone else: ${conflictTimes}. Please select different time slots.`
+                    );
+                }
+            }
             // Calculate total price based on time-based pricing rules
             const totalPrice = calculatePriceForSlots(bookingData.times || [], bookingData.court || {});
 
@@ -114,23 +141,23 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
             // Display user-friendly error message
             let errorMessage = error.message || 'An unexpected error occurred. Please try again.';
 
-            // Check if it's a conflict error - ask parent to refresh time slots
+            // Check if it's a conflict error — show blocking modal
             if (errorMessage.includes('conflict') || errorMessage.includes('already booked')) {
-                errorMessage = errorMessage + '\n\nPlease select different time slots and try again.';
-
                 // Dispatch event to tell parent to refresh
                 if (typeof window !== 'undefined') {
                     window.dispatchEvent(new CustomEvent('bookingConflict'));
                 }
+
+                setSubmitError(errorMessage);
+                setShowConflictModal(true); // Show blocking overlay
+                return; // Don't set step, the modal overlay handles everything
             }
 
             setSubmitError(errorMessage);
-
-            // Go back to step 1 so user can select different times
-            // But keep their form data cached
             setStep(1);
         } finally {
             setIsSubmitting(false);
+            isSubmittingRef.current = false; // Release synchronous guard
         }
     };
 
@@ -149,6 +176,50 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="fixed inset-0 bg-black/30 backdrop-blur-sm transition-opacity" onClick={handleClose}></div>
+
+            {/* Blocking Conflict Modal Overlay */}
+            {showConflictModal && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm"></div>
+                    <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full animate-in zoom-in-95 duration-200 overflow-hidden">
+                        <div className="p-6 sm:p-8 text-center">
+                            <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <AlertCircle size={36} />
+                            </div>
+                            <h2 className="text-xl font-bold text-gray-900 mb-2">Booking Conflict Detected</h2>
+                            <p className="text-sm text-gray-600 mb-4">
+                                Someone else has already booked the time slot(s) you selected. Your booking was not submitted.
+                            </p>
+                            <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4 text-left">
+                                <p className="text-sm text-red-800 whitespace-pre-line">{submitError}</p>
+                            </div>
+                            <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 mb-6 text-left">
+                                <p className="text-xs font-bold text-orange-900 mb-2">📌 What to do next:</p>
+                                <ul className="text-xs text-orange-800 space-y-1.5 ml-4 list-disc">
+                                    <li>Close this dialog and <strong>select different time slots</strong> from the calendar</li>
+                                    <li>Keep the <strong>same proof of payment</strong> — do NOT upload a new screenshot</li>
+                                    <li>Select time slots with the <strong>same total price</strong> as what you already paid (₱{getDynamicPrice().toLocaleString()})</li>
+                                    <li>You paid for <strong>{bookingData.times?.length || 1} hour(s)</strong>, so select {bookingData.times?.length || 1} slot(s)</li>
+                                </ul>
+                                <p className="text-xs text-red-700 font-semibold mt-3">
+                                    ⚠️ If the price doesn't match what you paid, your booking will be INVALID!
+                                </p>
+                            </div>
+                            <Button
+                                size="lg"
+                                className="w-full text-white bg-brand-green hover:bg-brand-green-dark"
+                                onClick={() => {
+                                    setShowConflictModal(false);
+                                    setSubmitError(null);
+                                    handleClose(); // Close the entire BookingModal
+                                }}
+                            >
+                                Select New Time Slots
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <div className="relative bg-white rounded-3xl shadow-2xl max-w-md w-full animate-in fade-in zoom-in duration-200 overflow-hidden max-h-[90vh] flex flex-col">
 
@@ -188,27 +259,14 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
                         /* STEP 1: Details */
                         <div className="space-y-6 animate-in slide-in-from-right duration-300">
 
-                            {/* Conflict Error Alert */}
-                            {submitError && (
+                            {/* Non-conflict errors still show inline */}
+                            {submitError && !showConflictModal && (
                                 <div className="bg-red-50 border-2 border-red-300 rounded-xl p-4 flex gap-3 animate-in slide-in-from-top duration-200">
                                     <AlertCircle size={24} className="text-red-600 shrink-0 mt-0.5" />
                                     <div className="flex-1">
-                                        <p className="text-sm font-bold text-red-900 mb-1">⚠️ Booking Conflict Detected</p>
+                                        <p className="text-sm font-bold text-red-900 mb-1">⚠️ Booking Error</p>
                                         <p className="text-xs text-red-800 whitespace-pre-line">{submitError}</p>
-                                        <div className="mt-3 p-3 bg-orange-50 border border-orange-200 rounded-lg">
-                                            <p className="text-xs font-bold text-orange-900 mb-2">📌 IMPORTANT - Before Selecting Different Times:</p>
-                                            <ul className="text-xs text-orange-800 space-y-1.5 ml-4">
-                                                <li>✓ <strong>Keep the same proof of payment</strong> - Do NOT upload a new screenshot</li>
-                                                <li>✓ <strong>Select time slots with the SAME TOTAL PRICE</strong> as what you already paid (₱{getDynamicPrice().toLocaleString()})</li>
-                                                <li>✓ <strong>Same number of hours:</strong> You paid for {bookingData.times?.length || 1} hour(s), so select {bookingData.times?.length || 1} slot(s)</li>
-                                            </ul>
-                                            <p className="text-xs text-red-700 font-semibold mt-2">
-                                                ⚠️ If the price doesn't match what you paid, your booking will be INVALID!
-                                            </p>
-                                        </div>
-                                        <p className="text-xs text-gray-700 mt-3 font-semibold">
-                                            👇 Select different time slots below, then click "Next: Pay" to continue or Contact our Social Media Platforms.
-                                        </p>
+                                        <p className="text-xs text-red-700 mt-2">Please try again or contact support.</p>
                                     </div>
                                 </div>
                             )}

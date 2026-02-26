@@ -281,8 +281,10 @@ export function Home() {
 
                 if (booking.booked_times && Array.isArray(booking.booked_times) && booking.booked_times.length > 0) {
                     booking.booked_times.forEach(time => {
-                        const normalizedTime = time.substring(0, 5);
-                        bookedSlots.add(normalizedTime);
+                        if (time && typeof time === 'string') {
+                            const normalizedTime = time.substring(0, 5);
+                            bookedSlots.add(normalizedTime);
+                        }
                     });
                 } else {
                     const [startHour, startMin] = startTime.split(':').map(Number);
@@ -326,8 +328,10 @@ export function Home() {
 
             if (booking.booked_times && Array.isArray(booking.booked_times) && booking.booked_times.length > 0) {
                 booking.booked_times.forEach(time => {
-                    const normalizedTime = time.substring(0, 5);
-                    bookingsByDate[bookingDate].add(normalizedTime);
+                    if (time && typeof time === 'string') {
+                        const normalizedTime = time.substring(0, 5);
+                        bookingsByDate[bookingDate].add(normalizedTime);
+                    }
                 });
             } else if (booking.start_time && booking.end_time) {
                 const startTime = booking.start_time.substring(0, 5);

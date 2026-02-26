@@ -124,13 +124,17 @@ export async function getDailyBookings(date) {
 }
 
 // Check for time slot conflicts before booking
-export async function checkTimeSlotConflicts(courtId, bookingDate, bookedTimes) {
+// Bug 2 fix: Now checks ALL courts for exclusive/whole court overlap
+// Bug 3 fix: excludeBookingId allows reschedule to skip itself
+export async function checkTimeSlotConflicts(courtId, bookingDate, bookedTimes, { courtType = '', excludeBookingId = null } = {}) {
   try {
-    // Get all confirmed bookings for this court and date
+    const isExclusiveBooking = courtType?.includes('Exclusive') || courtType?.includes('Whole');
+
+    // Query ALL bookings for this date (not just one court)
+    // This ensures we catch exclusive/whole court conflicts across courts
     const { data: existingBookings, error } = await supabase
       .from('bookings')
-      .select('booked_times, start_time, end_time, id')
-      .eq('court_id', courtId)
+      .select('booked_times, start_time, end_time, id, court_id, courts(id, type)')
       .eq('booking_date', bookingDate)
       .in('status', ['Confirmed', 'Rescheduled']);
 
@@ -143,13 +147,41 @@ export async function checkTimeSlotConflicts(courtId, bookingDate, bookedTimes) 
       return { hasConflict: false, conflicts: [] };
     }
 
-    // Check for overlapping time slots
+    // Check for overlapping time slots with cross-court exclusive logic
     const conflicts = [];
     for (const booking of existingBookings) {
+      // Skip the booking being rescheduled (Bug 3 fix)
+      if (excludeBookingId && booking.id === excludeBookingId) {
+        continue;
+      }
+
+      // Determine if this existing booking conflicts with the new one
+      let isConflict = false;
+
+      if (booking.court_id === courtId) {
+        // Same court — always a conflict
+        isConflict = true;
+      } else if (isExclusiveBooking) {
+        // New booking is exclusive/whole — conflicts with ALL courts
+        isConflict = true;
+      } else if (booking.courts?.type?.includes('Exclusive') || booking.courts?.type?.includes('Whole')) {
+        // Existing booking is exclusive/whole — conflicts with ALL courts
+        isConflict = true;
+      }
+
+      if (!isConflict) continue;
+
       const existingTimes = booking.booked_times || [];
 
       for (const requestedTime of bookedTimes) {
-        if (existingTimes.includes(requestedTime)) {
+        // Normalize both times for comparison
+        const normalizedRequested = requestedTime?.substring?.(0, 5) || requestedTime;
+        const hasOverlap = existingTimes.some(t => {
+          if (!t || typeof t !== 'string') return false;
+          return t.substring(0, 5) === normalizedRequested;
+        });
+
+        if (hasOverlap && !conflicts.includes(requestedTime)) {
           conflicts.push(requestedTime);
         }
       }
@@ -177,7 +209,8 @@ export async function createBooking({
   totalPrice,
   notes,
   proofOfPaymentUrl,
-  bookedTimes = []
+  bookedTimes = [],
+  courtType = ''
 }) {
   // Retry logic for race conditions
   const maxRetries = 1;
@@ -187,7 +220,6 @@ export async function createBooking({
     try {
       if (attempt > 0) {
         console.log(`Retry attempt ${attempt} after race condition...`);
-        // Small delay before retry
         await new Promise(resolve => setTimeout(resolve, 100 + Math.random() * 200));
       }
 
@@ -198,9 +230,9 @@ export async function createBooking({
         throw new Error('Missing required booking information. Please fill in all fields.');
       }
 
-      // Step 2: Check for conflicts BEFORE attempting to book
+      // Step 2: Pre-insert conflict check (with cross-court exclusive logic)
       console.log('Checking for conflicts...');
-      const conflictCheck = await checkTimeSlotConflicts(courtId, bookingDate, bookedTimes);
+      const conflictCheck = await checkTimeSlotConflicts(courtId, bookingDate, bookedTimes, { courtType });
 
       if (conflictCheck.hasConflict) {
         const conflictTimes = conflictCheck.conflicts.join(', ');
@@ -211,7 +243,7 @@ export async function createBooking({
 
       console.log('No conflicts found. Proceeding with booking...');
 
-      // Step 3: Attempt to insert the booking
+      // Step 3: Insert the booking
       const { data, error } = await supabase
         .from('bookings')
         .insert([{
@@ -233,12 +265,10 @@ export async function createBooking({
       if (error) {
         console.error('Database insert error:', error);
 
-        // Handle specific Supabase errors
         if (error.code === '23505') {
-          // Race condition - someone booked between our check and insert
           if (attempt < maxRetries) {
             lastError = new Error('❌ Time slot conflict! Someone else just booked this time slot. Retrying...');
-            continue; // Retry
+            continue;
           }
           throw new Error('❌ Time slot conflict! Someone else just booked this time slot. Please refresh the page and select a different time.');
         }
@@ -261,7 +291,31 @@ export async function createBooking({
       const bookingId = data[0].id;
       console.log('Booking inserted with ID:', bookingId);
 
-      // Step 5: Double-check the booking exists in the database (verification)
+      // Step 5: POST-INSERT race condition check (Bug 1 fix)
+      // Re-check conflicts AFTER insert — if another booking was inserted
+      // between our check and insert, we catch it here and roll back.
+      console.log('Post-insert conflict verification...');
+      const postInsertCheck = await checkTimeSlotConflicts(courtId, bookingDate, bookedTimes, {
+        courtType,
+        excludeBookingId: bookingId  // Exclude our own booking from the check
+      });
+
+      if (postInsertCheck.hasConflict) {
+        // Race condition detected! Delete our booking and report conflict.
+        console.error('Race condition detected! Deleting duplicate booking:', bookingId);
+        await supabase.from('bookings').delete().eq('id', bookingId);
+
+        const conflictTimes = postInsertCheck.conflicts.join(', ');
+        if (attempt < maxRetries) {
+          lastError = new Error(`❌ Time slot conflict! Someone else just booked: ${conflictTimes}. Retrying...`);
+          continue;
+        }
+        throw new Error(
+          `❌ Time slot conflict! Someone else just booked these times: ${conflictTimes}. Your booking was cancelled to prevent a double booking. Please refresh and select different time slots.`
+        );
+      }
+
+      // Step 6: Final verification — confirm booking is saved correctly
       console.log('Verifying booking was saved...');
       const { data: verifyData, error: verifyError } = await supabase
         .from('bookings')
@@ -285,16 +339,13 @@ export async function createBooking({
 
     } catch (err) {
       lastError = err;
-      // If it's not a race condition (23505), throw immediately
       if (!err.message.includes('Time slot conflict') || attempt === maxRetries) {
         console.error('Create booking error:', err);
         throw err;
       }
-      // Otherwise continue to retry
     }
   }
 
-  // If we exhausted retries
   console.error('Create booking error after retries:', lastError);
   throw lastError;
 }
@@ -376,8 +427,19 @@ export async function rescheduleBooking({
       throw new Error(`Booking with ID ${bookingId} not found`);
     }
 
-    // Check for conflicts on the new date/time
-    const conflictCheck = await checkTimeSlotConflicts(checkData.court_id, newDate, newBookedTimes);
+    // Check for conflicts on the new date/time (exclude self to avoid Bug 3)
+    const { data: courtData } = await supabase
+      .from('courts')
+      .select('type')
+      .eq('id', checkData.court_id)
+      .single();
+
+    const conflictCheck = await checkTimeSlotConflicts(
+      checkData.court_id,
+      newDate,
+      newBookedTimes,
+      { courtType: courtData?.type || '', excludeBookingId: bookingId }
+    );
 
     if (conflictCheck.hasConflict) {
       throw new Error(
