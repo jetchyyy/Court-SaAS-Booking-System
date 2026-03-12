@@ -195,6 +195,17 @@ export function AdminBookings() {
     const currentBookings = filteredBookings.slice(indexOfFirstItem, indexOfLastItem);
     const totalPages = Math.ceil(filteredBookings.length / itemsPerPage);
 
+    useEffect(() => {
+        if (totalPages === 0 && currentPage !== 1) {
+            setCurrentPage(1);
+            return;
+        }
+
+        if (totalPages > 0 && currentPage > totalPages) {
+            setCurrentPage(totalPages);
+        }
+    }, [currentPage, totalPages]);
+
     const getStatusColor = (status) => {
         switch (status) {
             case 'Confirmed': return 'green';

@@ -1,5 +1,5 @@
 import { format } from 'date-fns';
-import { Calendar, CheckCircle, Clock, CreditCard, Upload, AlertCircle, Loader } from 'lucide-react';
+import { Calendar, CheckCircle, Clock, CreditCard, Upload, AlertCircle, Loader, ScrollText } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { Button } from './ui';
 import { calculatePriceForSlots, checkTimeSlotConflicts } from '../services/booking';
@@ -14,6 +14,7 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
     const [submitError, setSubmitError] = useState(null);
     const [showConflictModal, setShowConflictModal] = useState(false); // Blocking conflict overlay
     const [bookingResult, setBookingResult] = useState(null);
+    const [termsAccepted, setTermsAccepted] = useState(false);
     const prevIsOpen = useRef(isOpen);
     const isSubmittingRef = useRef(false); // Synchronous guard for double-submit (Bug 5)
 
@@ -44,6 +45,7 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
             setSubmitError(null);
             setShowConflictModal(false);
             setBookingResult(null);
+            setTermsAccepted(false);
         }
         prevIsOpen.current = isOpen;
     }, [isOpen]);
@@ -69,6 +71,7 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
         setStep(2);
     };
 
+    // Validate Step 3 payment fields and submit the booking
     const handleSubmit = async () => {
         const newErrors = {};
         if (!formData.reference) newErrors.reference = 'Last 4 digits are required';
@@ -127,13 +130,11 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
 
             if (bookingId) {
                 console.log('Booking successful with ID:', bookingId);
-                console.log('Setting step to 3 (success screen)...');
-                setStep(3);
+                setStep(4);
             } else {
                 console.error('No booking ID found in result:', result);
                 // Still proceed to success since the logs show it was created
-                console.log('Setting step to 3 anyway (success screen)...');
-                setStep(3);
+                setStep(4);
             }
         } catch (error) {
             console.error('Booking submission error:', error);
@@ -154,7 +155,7 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
             }
 
             setSubmitError(errorMessage);
-            setStep(1);
+            setStep(3);
         } finally {
             setIsSubmitting(false);
             isSubmittingRef.current = false; // Release synchronous guard
@@ -169,6 +170,7 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
             setErrors({});
             setSubmitError(null);
             setBookingResult(null);
+            setTermsAccepted(false);
             onClose();
         }
     };
@@ -230,24 +232,28 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
                         <div className={`h-1.5 flex-1 rounded-full transition-colors duration-300 ${step >= 1 ? 'bg-brand-green' : 'bg-gray-100'}`} />
                         <div className={`h-1.5 flex-1 rounded-full transition-colors duration-300 ${step >= 2 ? 'bg-brand-green' : 'bg-gray-100'}`} />
                         <div className={`h-1.5 flex-1 rounded-full transition-colors duration-300 ${step >= 3 ? 'bg-brand-green' : 'bg-gray-100'}`} />
+                        <div className={`h-1.5 flex-1 rounded-full transition-colors duration-300 ${step >= 4 ? 'bg-brand-green' : 'bg-gray-100'}`} />
                     </div>
 
                     {/* Header */}
                     <div className="text-center mb-2">
                         <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-brand-green-light text-brand-green-dark mb-4">
                             {step === 1 && <CheckCircle size={24} />}
-                            {step === 2 && <CreditCard size={24} />}
-                            {step === 3 && <CheckCircle size={24} />}
+                            {step === 2 && <ScrollText size={24} />}
+                            {step === 3 && <CreditCard size={24} />}
+                            {step === 4 && <CheckCircle size={24} />}
                         </div>
                         <h2 className="text-2xl font-display font-bold text-brand-green-dark">
                             {step === 1 && 'Confirm Booking'}
-                            {step === 2 && 'Payment'}
-                            {step === 3 && 'Success'}
+                            {step === 2 && 'Terms & Conditions'}
+                            {step === 3 && 'Payment'}
+                            {step === 4 && 'Success'}
                         </h2>
                         <p className="text-gray-500 text-sm mt-1">
                             {step === 1 && "You're almost ready to play!"}
-                            {step === 2 && "Scan to pay via GCash or Bank Transfer"}
-                            {step === 3 && "Booking confirmed successfully"}
+                            {step === 2 && "Please read and accept before paying"}
+                            {step === 3 && "Scan to pay via GCash or GoTyme"}
+                            {step === 4 && "Booking confirmed successfully"}
                         </p>
                     </div>
                 </div>
@@ -351,13 +357,71 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
 
                             <div className="flex gap-3 pt-2">
                                 <Button variant="ghost" className="flex-1" onClick={handleClose}>Cancel</Button>
-                                <Button className="flex-1 text-white" onClick={handleNext}>Next: Pay</Button>
+                                <Button className="flex-1 text-white" onClick={handleNext}>Next</Button>
                             </div>
                         </div>
                     )}
 
                     {step === 2 && (
-                        /* STEP 2: Payment */
+                        /* STEP 2: Terms & Conditions */
+                        <div className="space-y-6 animate-in slide-in-from-right duration-300">
+                            <div className="bg-gray-50 border border-gray-200 rounded-2xl overflow-hidden">
+                                <div className="overflow-y-auto max-h-64 p-5 custom-scrollbar space-y-4 text-sm text-gray-700">
+                                    <h4 className="font-bold text-gray-900 text-base mb-3">Booking &amp; Cancellation Policy</h4>
+                                    <div className="space-y-4">
+                                        <div>
+                                            <p className="font-semibold text-gray-800">1. Booking Confirmation</p>
+                                            <p className="mt-1 leading-relaxed">All bookings are considered confirmed upon payment and are non-refundable.</p>
+                                        </div>
+                                        <div>
+                                            <p className="font-semibold text-gray-800">2. No-Refund Policy</p>
+                                            <p className="mt-1 leading-relaxed">Strictly no refunds will be issued once a booking is confirmed. This applies to cancellations, no-shows, or changes in plans made by the client.</p>
+                                        </div>
+                                        <div>
+                                            <p className="font-semibold text-gray-800">3. Rain-Related Rescheduling</p>
+                                            <ul className="mt-1 space-y-2 ml-4 list-disc leading-relaxed">
+                                                <li><span className="font-medium">Weather Clause:</span> Rescheduling is permitted exclusively due to rain.</li>
+                                                <li><span className="font-medium">Time Limit:</span> Notice of intent to reschedule due to rain must be provided at least one (1) hour prior to the scheduled booking time.</li>
+                                                <li><span className="font-medium">Procedure:</span> If it is raining one hour before your booking, please contact us to move your session to a new date &amp; time within 30 days (subject to availability).</li>
+                                                <li><span className="font-medium">No-Rain Clause:</span> If the rain stops, or it is not raining one hour prior, the original booking time remains in effect.</li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div
+                                onClick={() => setTermsAccepted(prev => !prev)}
+                                className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer select-none transition-colors ${
+                                    termsAccepted ? 'border-brand-green bg-green-50' : 'border-gray-200 bg-gray-50 hover:border-brand-green/50'
+                                }`}
+                            >
+                                <input
+                                    type="checkbox"
+                                    checked={termsAccepted}
+                                    readOnly
+                                    className="mt-0.5 w-4 h-4 accent-brand-green shrink-0 pointer-events-none"
+                                />
+                                <span className="text-sm text-gray-700 leading-snug">
+                                    I have read and agree to the <span className="font-medium text-brand-green-dark">Terms and Conditions</span>
+                                </span>
+                            </div>
+
+                            <div className="flex gap-3 pt-2">
+                                <Button variant="ghost" className="flex-1" onClick={() => setStep(1)}>Back</Button>
+                                <Button
+                                    className="flex-1 text-white"
+                                    disabled={!termsAccepted}
+                                    onClick={() => { setErrors({}); setStep(3); }}
+                                >
+                                    Next: Pay
+                                </Button>
+                            </div>
+                        </div>
+                    )}
+
+                    {step === 3 && (
+                        /* STEP 3: Payment */
                         <div className="space-y-6 animate-in slide-in-from-right duration-300">
 
                             {/* Error Alert */}
@@ -405,7 +469,7 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
                                     <div className={`relative w-64 aspect-square mb-3 rounded-lg overflow-hidden group ${paymentMethod === 'gcash' ? 'bg-blue-50' : 'bg-indigo-50'
                                         }`}>
                                         <img
-                                            src={paymentMethod === 'gcash' ? "/images/gcash.jpg" : "/images/gotyme.jpg"}
+                                            src={paymentMethod === 'gcash' ? "/images/gcash2.jpg" : "/images/gotyme.jpg"}
                                             alt={`${paymentMethod === 'gcash' ? 'GCash' : 'GoTyme'} QR Code`}
                                             className="w-full h-full object-contain"
                                             onError={(e) => {
@@ -418,7 +482,7 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
                                     <div className="text-center">
                                         <p className="text-sm text-gray-500 mb-0.5">Account Name</p>
                                         <p className="font-bold text-gray-900 text-lg leading-tight mb-1">
-                                            SYE SIMOLDE
+                                            {paymentMethod === 'gcash' ? 'KH***L S.' : 'SYE SIMOLDE'}
                                         </p>
                                         <span className={`text-xs font-bold uppercase tracking-wide ${paymentMethod === 'gcash' ? 'text-blue-600' : 'text-indigo-600'
                                             }`}>
@@ -527,7 +591,7 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
                                 <Button
                                     variant="ghost"
                                     className="flex-1"
-                                    onClick={() => setStep(1)}
+                                    onClick={() => setStep(2)}
                                     disabled={isSubmitting}
                                 >
                                     Back
@@ -550,8 +614,8 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
                         </div>
                     )}
 
-                    {step === 3 && (
-                        /* STEP 3: Success */
+                    {step === 4 && (
+                        /* STEP 4: Success */
                         <div className="space-y-6 animate-in slide-in-from-right duration-300 text-center py-4">
                             <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4 animate-in zoom-in spin-in-3 duration-500">
                                 <CheckCircle size={40} />

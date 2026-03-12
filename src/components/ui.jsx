@@ -65,22 +65,57 @@ export function Badge({ className, variant = 'green', children }) {
 }
 
 export function Pagination({ currentPage, totalPages, onPageChange }) {
+    const safeTotalPages = Number.isFinite(totalPages) && totalPages > 0
+        ? Math.floor(totalPages)
+        : 1;
+    const safeCurrentPage = Math.min(Math.max(currentPage, 1), safeTotalPages);
+
+    const buildPageItems = () => {
+        if (safeTotalPages <= 7) {
+            return Array.from({ length: safeTotalPages }, (_, index) => index + 1);
+        }
+
+        const pages = new Set([1, safeTotalPages]);
+
+        for (let page = safeCurrentPage - 1; page <= safeCurrentPage + 1; page += 1) {
+            if (page > 1 && page < safeTotalPages) {
+                pages.add(page);
+            }
+        }
+
+        const sortedPages = Array.from(pages).sort((a, b) => a - b);
+        const items = [];
+
+        sortedPages.forEach((page, index) => {
+            items.push(page);
+
+            const nextPage = sortedPages[index + 1];
+            if (nextPage && nextPage - page > 1) {
+                items.push(`ellipsis-${page}`);
+            }
+        });
+
+        return items;
+    };
+
+    const pageItems = buildPageItems();
+
     return (
         <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 bg-gray-50">
             <div className="flex-1 flex justify-between sm:hidden">
                 <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => onPageChange(Math.max(1, currentPage - 1))}
-                    disabled={currentPage === 1}
+                    onClick={() => onPageChange(Math.max(1, safeCurrentPage - 1))}
+                    disabled={safeCurrentPage === 1}
                 >
                     Previous
                 </Button>
                 <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
-                    disabled={currentPage === totalPages}
+                    onClick={() => onPageChange(Math.min(safeTotalPages, safeCurrentPage + 1))}
+                    disabled={safeCurrentPage === safeTotalPages}
                 >
                     Next
                 </Button>
@@ -88,14 +123,14 @@ export function Pagination({ currentPage, totalPages, onPageChange }) {
             <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
                 <div>
                     <p className="text-sm text-gray-700">
-                        Page <span className="font-medium">{currentPage}</span> of <span className="font-medium">{totalPages}</span>
+                        Page <span className="font-medium">{safeCurrentPage}</span> of <span className="font-medium">{safeTotalPages}</span>
                     </p>
                 </div>
                 <div>
                     <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
                         <button
-                            onClick={() => onPageChange(Math.max(1, currentPage - 1))}
-                            disabled={currentPage === 1}
+                            onClick={() => onPageChange(Math.max(1, safeCurrentPage - 1))}
+                            disabled={safeCurrentPage === 1}
                             className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             <span className="sr-only">Previous</span>
@@ -103,21 +138,34 @@ export function Pagination({ currentPage, totalPages, onPageChange }) {
                                 <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
                             </svg>
                         </button>
-                        {[...Array(totalPages)].map((_, i) => (
-                            <button
-                                key={i + 1}
-                                onClick={() => onPageChange(i + 1)}
-                                className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${currentPage === i + 1
-                                    ? 'z-10 bg-brand-green-light border-brand-green text-brand-green-dark'
-                                    : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'
-                                    }`}
-                            >
-                                {i + 1}
-                            </button>
-                        ))}
+                        {pageItems.map((item) => {
+                            if (typeof item === 'string') {
+                                return (
+                                    <span
+                                        key={item}
+                                        className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-400"
+                                    >
+                                        ...
+                                    </span>
+                                );
+                            }
+
+                            return (
+                                <button
+                                    key={item}
+                                    onClick={() => onPageChange(item)}
+                                    className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${safeCurrentPage === item
+                                        ? 'z-10 bg-brand-green-light border-brand-green text-brand-green-dark'
+                                        : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'
+                                        }`}
+                                >
+                                    {item}
+                                </button>
+                            );
+                        })}
                         <button
-                            onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
-                            disabled={currentPage === totalPages}
+                            onClick={() => onPageChange(Math.min(safeTotalPages, safeCurrentPage + 1))}
+                            disabled={safeCurrentPage === safeTotalPages}
                             className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             <span className="sr-only">Next</span>
