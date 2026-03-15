@@ -382,7 +382,14 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
                                             <ul className="mt-1 space-y-2 ml-4 list-disc leading-relaxed">
                                                 <li><span className="font-medium">Weather Clause:</span> Rescheduling is permitted exclusively due to rain.</li>
                                                 <li><span className="font-medium">Time Limit:</span> Notice of intent to reschedule due to rain must be provided at least one (1) hour prior to the scheduled booking time.</li>
-                                                <li><span className="font-medium">Procedure:</span> If it is raining one hour before your booking, please contact us to move your session to a new date &amp; time within 30 days (subject to availability).</li>
+                                                <li><span className="font-medium">Procedure:</span> If it is raining one hour before your booking, please contact us to move your session to a new date and time within 30 days (subject to availability).</li>
+                                                <li>
+                                                    <span className="font-medium">Rain During Playtime:</span>
+                                                    <ul className="mt-1 space-y-1 ml-4 list-disc">
+                                                        <li>If rain occurs on or before 30 minutes of playtime, the full one-hour session may be rescheduled, subject to availability.</li>
+                                                        <li>If rain occurs within the last 15 minutes of your booked time, the session will be considered completed and rescheduling will no longer be applicable.</li>
+                                                    </ul>
+                                                </li>
                                                 <li><span className="font-medium">No-Rain Clause:</span> If the rain stops, or it is not raining one hour prior, the original booking time remains in effect.</li>
                                             </ul>
                                         </div>
@@ -482,7 +489,7 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
                                     <div className="text-center">
                                         <p className="text-sm text-gray-500 mb-0.5">Account Name</p>
                                         <p className="font-bold text-gray-900 text-lg leading-tight mb-1">
-                                            {paymentMethod === 'gcash' ? 'KH***L S.' : 'SYE SIMOLDE'}
+                                            {paymentMethod === 'gcash' ? 'Kharyl Simolde' : 'SYE SIMOLDE'}
                                         </p>
                                         <span className={`text-xs font-bold uppercase tracking-wide ${paymentMethod === 'gcash' ? 'text-blue-600' : 'text-indigo-600'
                                             }`}>
