@@ -367,30 +367,37 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
                         <div className="space-y-6 animate-in slide-in-from-right duration-300">
                             <div className="bg-gray-50 border border-gray-200 rounded-2xl overflow-hidden">
                                 <div className="overflow-y-auto max-h-64 p-5 custom-scrollbar space-y-4 text-sm text-gray-700">
-                                    <h4 className="font-bold text-gray-900 text-base mb-3">Booking &amp; Cancellation Policy</h4>
+                                    <h4 className="font-bold text-gray-900 text-base mb-3">Terms and Conditions</h4>
                                     <div className="space-y-4">
                                         <div>
                                             <p className="font-semibold text-gray-800">1. Booking Confirmation</p>
-                                            <p className="mt-1 leading-relaxed">All bookings are considered confirmed upon payment and are non-refundable.</p>
+                                            <p className="mt-1 leading-relaxed">All bookings are confirmed upon payment and are strictly non-refundable.</p>
                                         </div>
                                         <div>
-                                            <p className="font-semibold text-gray-800">2. No-Refund Policy</p>
-                                            <p className="mt-1 leading-relaxed">Strictly no refunds will be issued once a booking is confirmed. This applies to cancellations, no-shows, or changes in plans made by the client.</p>
+                                            <p className="font-semibold text-gray-800">2. No Refunds</p>
+                                            <p className="mt-1 leading-relaxed">No refunds will be issued for cancellations, no-shows, or any changes in schedule.</p>
                                         </div>
                                         <div>
-                                            <p className="font-semibold text-gray-800">3. Rain-Related Rescheduling</p>
+                                            <p className="font-semibold text-gray-800">3. Corkage Policy</p>
+                                            <p className="mt-1 leading-relaxed">Corkage applies to all non-exclusive bookings.</p>
+                                        </div>
+                                        <div>
+                                            <p className="font-semibold text-gray-800">4. Damages</p>
+                                            <p className="mt-1 leading-relaxed">Any damage to court, equipment, or property will incur a minimum fine of ₱2,500-subject to assessment.</p>
+                                        </div>
+                                        <div>
+                                            <p className="font-semibold text-gray-800">5. Smoking Policy</p>
+                                            <p className="mt-1 leading-relaxed">Smoking is strictly prohibited. A penalty of ₱500 will be charged if violated.</p>
+                                        </div>
+                                        <div>
+                                            <p className="font-semibold text-gray-800">6. Rain Rescheduling</p>
+                                            <p className="mt-1 leading-relaxed">Rescheduling is allowed for rain only.</p>
                                             <ul className="mt-1 space-y-2 ml-4 list-disc leading-relaxed">
-                                                <li><span className="font-medium">Weather Clause:</span> Rescheduling is permitted exclusively due to rain.</li>
-                                                <li><span className="font-medium">Time Limit:</span> Notice of intent to reschedule due to rain must be provided at least one (1) hour prior to the scheduled booking time.</li>
-                                                <li><span className="font-medium">Procedure:</span> If it is raining one hour before your booking, please contact us to move your session to a new date and time within 30 days (subject to availability).</li>
-                                                <li>
-                                                    <span className="font-medium">Rain During Playtime:</span>
-                                                    <ul className="mt-1 space-y-1 ml-4 list-disc">
-                                                        <li>If rain occurs on or before 30 minutes of playtime, the full one-hour session may be rescheduled, subject to availability.</li>
-                                                        <li>If rain occurs within the last 15 minutes of your booked time, the session will be considered completed and rescheduling will no longer be applicable.</li>
-                                                    </ul>
-                                                </li>
-                                                <li><span className="font-medium">No-Rain Clause:</span> If the rain stops, or it is not raining one hour prior, the original booking time remains in effect.</li>
+                                                <li>Must notify at least 1 hour before booking time.</li>
+                                                <li>If raining 1 hour prior, booking may be moved within 30 days (subject to availability).</li>
+                                                <li>If rain occurs within the first 30 minutes, session may be rescheduled.</li>
+                                                <li>If rain occurs in the last 15 minutes, session is considered completed.</li>
+                                                <li>If no rain 1 hour prior, booking proceeds as scheduled.</li>
                                             </ul>
                                         </div>
                                     </div>
@@ -476,7 +483,7 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
                                     <div className={`relative w-64 aspect-square mb-3 rounded-lg overflow-hidden group ${paymentMethod === 'gcash' ? 'bg-blue-50' : 'bg-indigo-50'
                                         }`}>
                                         <img
-                                            src={paymentMethod === 'gcash' ? "/images/gcash2.jpg" : "/images/gotyme.jpg"}
+                                            src={paymentMethod === 'gcash' ? "/images/gcash.jpg" : "/images/gotyme.jpg"}
                                             alt={`${paymentMethod === 'gcash' ? 'GCash' : 'GoTyme'} QR Code`}
                                             className="w-full h-full object-contain"
                                             onError={(e) => {
@@ -489,7 +496,7 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
                                     <div className="text-center">
                                         <p className="text-sm text-gray-500 mb-0.5">Account Name</p>
                                         <p className="font-bold text-gray-900 text-lg leading-tight mb-1">
-                                            {paymentMethod === 'gcash' ? 'Kharyl Simolde' : 'SYE SIMOLDE'}
+                                            {paymentMethod === 'gcash' ? 'SYE SIMOLDE' : 'SYE SIMOLDE'}
                                         </p>
                                         <span className={`text-xs font-bold uppercase tracking-wide ${paymentMethod === 'gcash' ? 'text-blue-600' : 'text-indigo-600'
                                             }`}>

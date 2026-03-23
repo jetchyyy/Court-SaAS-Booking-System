@@ -173,10 +173,21 @@ export async function checkTimeSlotConflicts(courtId, bookingDate, bookedTimes, 
 
       const existingTimes = booking.booked_times || [];
 
+      // Fallback: if booked_times is empty, expand start_time/end_time into :00 slots
+      let timesToCheck = existingTimes;
+      if (timesToCheck.length === 0 && booking.start_time && booking.end_time) {
+        const startHour = parseInt(booking.start_time.substring(0, 2), 10);
+        const endHour = parseInt(booking.end_time.substring(0, 2), 10);
+        timesToCheck = [];
+        for (let h = startHour; h < endHour; h++) {
+          timesToCheck.push(`${h.toString().padStart(2, '0')}:00`);
+        }
+      }
+
       for (const requestedTime of bookedTimes) {
         // Normalize both times for comparison
         const normalizedRequested = requestedTime?.substring?.(0, 5) || requestedTime;
-        const hasOverlap = existingTimes.some(t => {
+        const hasOverlap = timesToCheck.some(t => {
           if (!t || typeof t !== 'string') return false;
           return t.substring(0, 5) === normalizedRequested;
         });

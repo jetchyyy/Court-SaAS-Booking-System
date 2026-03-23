@@ -287,11 +287,11 @@ export function Home() {
                         }
                     });
                 } else {
-                    const [startHour, startMin] = startTime.split(':').map(Number);
-                    const [endHour, endMin] = endTime.split(':').map(Number);
+                    const [startHour] = startTime.split(':').map(Number);
+                    const [endHour] = endTime.split(':').map(Number);
 
                     for (let hour = startHour; hour < endHour; hour++) {
-                        const timeSlot = `${hour.toString().padStart(2, '0')}:${startMin.toString().padStart(2, '0')}`;
+                        const timeSlot = `${hour.toString().padStart(2, '0')}:00`;
                         bookedSlots.add(timeSlot);
                     }
                 }
@@ -336,11 +336,11 @@ export function Home() {
             } else if (booking.start_time && booking.end_time) {
                 const startTime = booking.start_time.substring(0, 5);
                 const endTime = booking.end_time.substring(0, 5);
-                const [startHour, startMin] = startTime.split(':').map(Number);
-                const [endHour, endMin] = endTime.split(':').map(Number);
+                const [startHour] = startTime.split(':').map(Number);
+                const [endHour] = endTime.split(':').map(Number);
 
                 for (let hour = startHour; hour < endHour; hour++) {
-                    const timeSlot = `${hour.toString().padStart(2, '0')}:${startMin.toString().padStart(2, '0')}`;
+                    const timeSlot = `${hour.toString().padStart(2, '0')}:00`;
                     bookingsByDate[bookingDate].add(timeSlot);
                 }
             }
