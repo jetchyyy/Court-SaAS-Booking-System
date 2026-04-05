@@ -1,11 +1,13 @@
 import { eachDayOfInterval, endOfMonth, endOfWeek, format, isSameDay, isSameMonth, parseISO, startOfMonth, startOfWeek } from 'date-fns';
 import { Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Badge } from '../../components/ui';
 import { getAllBookings, subscribeToBookings, updateBookingStatus } from '../../services/booking';
 import { BookingDetailsModal } from '../../components/admin/BookingDetailsModal';
 
 export function AdminCalendar() {
+    const navigate = useNavigate();
     const [currentMonth, setCurrentMonth] = useState(new Date());
     const [bookings, setBookings] = useState([]);
     const [selectedDate, setSelectedDate] = useState(new Date());
@@ -55,6 +57,18 @@ export function AdminCalendar() {
 
     const calendarDays = eachDayOfInterval({ start: startDate, end: endDate });
 
+    const toUTC = (isoStr) => {
+        if (!isoStr) return new Date(NaN);
+        const s = isoStr.trim();
+        if (s.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(s)) return new Date(s);
+        return new Date(s + 'Z');
+    };
+    const getManilaDateStr = (date) =>
+        new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(date);
+    const todayStr = getManilaDateStr(new Date());
+    const todayCount = bookings.filter(b => b.created_at && getManilaDateStr(toUTC(b.created_at)) === todayStr).length;
+    const todayLabel = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', month: 'long', day: 'numeric', year: 'numeric' }).format(new Date());
+
     const getBookingsForDate = (date) => {
         const dateStr = format(date, 'yyyy-MM-dd');
         return bookings.filter(b => b.booking_date === dateStr && b.status !== 'Cancelled');
@@ -73,6 +87,21 @@ export function AdminCalendar() {
                 <h1 className="text-2xl font-bold font-display text-brand-green-dark">Calendar Schedule</h1>
                 <p className="text-gray-500">Overview of efficient court utilization</p>
             </div>
+
+            {/* Today's bookings pill */}
+            {!loading && (
+                <button
+                    onClick={() => navigate('/admin/bookings')}
+                    className="inline-flex items-center gap-1.5 bg-brand-green/10 hover:bg-brand-green/20 text-brand-green-dark text-sm font-medium px-3 py-1.5 rounded-full transition-colors cursor-pointer"
+                >
+                    <span className="w-2 h-2 rounded-full bg-brand-green animate-pulse" />
+                    {todayCount === 0
+                        ? `No new bookings today — ${todayLabel}`
+                        : `${todayCount} new booking${todayCount > 1 ? 's' : ''} added today — ${todayLabel}`
+                    }
+                    <span className="text-xs opacity-60 ml-1">View →</span>
+                </button>
+            )}
 
             <div className="flex flex-col lg:flex-row gap-8">
                 {/* Calendar Grid */}

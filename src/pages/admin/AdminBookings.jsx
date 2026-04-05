@@ -13,7 +13,7 @@ export function AdminBookings() {
     const [searchTerm, setSearchTerm] = useState('');
     const [filterStatus, setFilterStatus] = useState('All');
     const [filterDate, setFilterDate] = useState('today');
-    const [sortOrder, setSortOrder] = useState('morning');
+    const [sortOrder, setSortOrder] = useState('newest');
     const [selectedBooking, setSelectedBooking] = useState(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isRescheduleModalOpen, setIsRescheduleModalOpen] = useState(false);
@@ -33,6 +33,26 @@ export function AdminBookings() {
         successTitle: 'Success!',
         successDescription: 'Action completed successfully.'
     });
+
+    // Philippine timezone helpers
+    const MANILA_TZ = 'Asia/Manila';
+    // Normalize Supabase timestamps to UTC — Supabase may return "2026-04-05T13:32:00"
+    // without a Z/offset suffix, which browsers parse as LOCAL time. Appending Z forces UTC.
+    const toUTC = (isoStr) => {
+        if (!isoStr) return new Date(NaN);
+        const s = isoStr.trim();
+        // Already has timezone info (Z, +, or -)
+        if (s.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(s)) return new Date(s);
+        return new Date(s + 'Z');
+    };
+    const getManilaDateStr = (date) =>
+        new Intl.DateTimeFormat('en-CA', { timeZone: MANILA_TZ }).format(date);
+    const formatManilaDate = (isoStr) =>
+        new Intl.DateTimeFormat('en-US', { timeZone: MANILA_TZ, month: 'short', day: 'numeric', year: 'numeric' }).format(toUTC(isoStr));
+    const formatManilaTime = (isoStr) =>
+        new Intl.DateTimeFormat('en-US', { timeZone: MANILA_TZ, hour: 'numeric', minute: '2-digit', hour12: true }).format(toUTC(isoStr));
+    const formatManilaShort = (isoStr) =>
+        new Intl.DateTimeFormat('en-US', { timeZone: MANILA_TZ, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }).format(toUTC(isoStr));
 
     // Helper function to convert 24-hour time to 12-hour format
     const formatTime12Hour = (timeString) => {
@@ -179,40 +199,39 @@ export function AdminBookings() {
         });
     };
 
-    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    const todayStr = getManilaDateStr(new Date());
+    const yesterdayStr = getManilaDateStr(new Date(Date.now() - 86400000));
 
     const filteredBookings = bookings.filter(b => {
         const matchesSearch = b.customer_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
             b.id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
             b.customer_email?.toLowerCase().includes(searchTerm.toLowerCase());
 
+        const createdDate = b.created_at ? getManilaDateStr(toUTC(b.created_at)) : null;
         const matchesDate = filterDate === 'today'
-            ? b.booking_date === todayStr
+            ? createdDate === todayStr
+            : filterDate === 'yesterday'
+            ? createdDate === yesterdayStr
             : true;
 
         const matchesStatus = filterStatus === 'All' || b.status === filterStatus;
 
         return matchesSearch && matchesDate && matchesStatus;
     }).sort((a, b) => {
-        if (sortOrder === 'morning') {
-            // Sort by date ascending, then by start time ascending (morning to evening)
-            const dateDiff = new Date(a.booking_date) - new Date(b.booking_date);
-            if (dateDiff !== 0) return dateDiff;
-            const getStartMinutes = (booking) => {
-                const t = booking.start_time ||
-                    (Array.isArray(booking.booked_times) && booking.booked_times.length > 0
-                        ? booking.booked_times[0] : null);
-                if (!t) return 0;
-                const [h, m] = t.split(':').map(Number);
-                return h * 60 + (m || 0);
-            };
-            return getStartMinutes(a) - getStartMinutes(b);
-        }
-        // Default: newest date first
-        return new Date(b.booking_date) - new Date(a.booking_date);
+        const aTime = a.created_at ? toUTC(a.created_at).getTime() : 0;
+        const bTime = b.created_at ? toUTC(b.created_at).getTime() : 0;
+        if (sortOrder === 'oldest') return aTime - bTime;
+        // Default: newest first
+        return bTime - aTime;
     });
 
     // Calculate pagination logic
+    const mostRecentId = filteredBookings.length > 0
+        ? filteredBookings.reduce((max, b) =>
+            (b.created_at && toUTC(b.created_at).getTime() > (max.created_at ? toUTC(max.created_at).getTime() : 0)) ? b : max
+          , filteredBookings[0]).id
+        : null;
+
     const indexOfLastItem = currentPage * itemsPerPage;
     const indexOfFirstItem = indexOfLastItem - itemsPerPage;
     const currentBookings = filteredBookings.slice(indexOfFirstItem, indexOfLastItem);
@@ -262,7 +281,7 @@ export function AdminBookings() {
             {/* Row 2: Filters */}
             <div className="flex flex-wrap gap-3">
                     <div className="flex bg-gray-100 p-1 rounded-xl">
-                        {[{ label: 'Earliest First', value: 'morning' }, { label: 'Newest', value: 'newest' }].map(({ label, value }) => (
+                        {[{ label: 'Newest to Oldest', value: 'newest' }, { label: 'Oldest to Newest', value: 'oldest' }].map(({ label, value }) => (
                             <button
                                 key={value}
                                 onClick={() => setSortOrder(value)}
@@ -280,14 +299,16 @@ export function AdminBookings() {
                     </div>
 
                     <div className="flex bg-gray-100 p-1 rounded-xl">
-                        {[{ label: 'Today', value: 'today' }, { label: 'All Dates', value: 'all' }].map(({ label, value }) => (
+                        {[{ label: `Today (${new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric' }).format(new Date())})`, value: 'today' }, { label: 'All Dates', value: 'all' }].map(({ label, value }) => (
                             <button
                                 key={value}
                                 onClick={() => setFilterDate(value)}
                                 className={`
                                     px-4 py-2 text-sm font-medium rounded-lg transition-all
                                     ${filterDate === value
-                                        ? 'bg-white text-brand-green-dark shadow-sm'
+                                        ? value === 'today'
+                                            ? 'bg-teal-100 text-teal-700 shadow-sm'
+                                            : 'bg-slate-200 text-slate-700 shadow-sm'
                                         : 'text-gray-500 hover:text-gray-700'
                                     }
                                 `}
@@ -305,7 +326,13 @@ export function AdminBookings() {
                                 className={`
                                     px-4 py-2 text-sm font-medium rounded-lg transition-all
                                     ${filterStatus === status
-                                        ? 'bg-white text-brand-green-dark shadow-sm'
+                                        ? status === 'Confirmed'
+                                            ? 'bg-teal-100 text-teal-700 shadow-sm'
+                                            : status === 'Rescheduled'
+                                            ? 'bg-orange-100 text-orange-600 shadow-sm'
+                                            : status === 'Cancelled'
+                                            ? 'bg-red-100 text-red-600 shadow-sm'
+                                            : 'bg-slate-200 text-slate-700 shadow-sm'
                                         : 'text-gray-500 hover:text-gray-700'
                                     }
                                 `}
@@ -315,6 +342,23 @@ export function AdminBookings() {
                         ))}
                     </div>
             </div>
+
+            {/* Today's booking summary label */}
+            {(() => {
+                const todayCount = bookings.filter(b => b.created_at && getManilaDateStr(toUTC(b.created_at)) === todayStr).length;
+                const todayLabel = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', month: 'long', day: 'numeric', year: 'numeric' }).format(new Date());
+                return !loading && (
+                    <div className="flex items-center gap-2">
+                        <span className="inline-flex items-center gap-1.5 bg-brand-green/10 text-brand-green-dark text-sm font-medium px-3 py-1.5 rounded-full">
+                            <span className="w-2 h-2 rounded-full bg-brand-green animate-pulse" />
+                            {todayCount === 0
+                                ? `No new bookings today — ${todayLabel}`
+                                : `${todayCount} new booking${todayCount > 1 ? 's' : ''} added today — ${todayLabel}`
+                            }
+                        </span>
+                    </div>
+                );
+            })()}
 
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
 
@@ -326,11 +370,14 @@ export function AdminBookings() {
                         <p className="px-4 py-8 text-center text-gray-500 text-sm">No bookings found matching your search.</p>
                     ) : (
                         currentBookings.map((booking) => (
-                            <div key={booking.id} className="px-4 py-3 flex items-center justify-between gap-3">
+                            <div key={booking.id} className={`px-4 py-3 flex items-center justify-between gap-3 ${booking.id === mostRecentId ? 'border-l-2 border-l-teal-400 bg-teal-50/30' : ''}`}>
                                 <div className="min-w-0 flex-1">
                                     <div className="flex items-center gap-2 flex-wrap">
                                         <p className="font-medium text-gray-900 text-sm leading-tight truncate">{booking.customer_name}</p>
                                         <Badge variant={getStatusColor(booking.status)}>{booking.status}</Badge>
+                                        {booking.id === mostRecentId && (
+                                            <span className="text-[10px] font-semibold bg-teal-100 text-teal-700 px-1.5 py-0.5 rounded-full">Recent</span>
+                                        )}
                                     </div>
                                     <p className="text-xs text-gray-400 leading-tight">{booking.customer_phone}</p>
                                     <div className="flex items-center gap-2 text-xs text-gray-400 mt-0.5 flex-wrap">
@@ -346,6 +393,11 @@ export function AdminBookings() {
                                                 : `${formatTime12Hour(booking.start_time)} - ${formatTime12Hour(booking.end_time)}`
                                             }
                                         </span>
+                                        {booking.created_at && (
+                                            <span className="flex items-center gap-1 text-gray-400">
+                                                Booked: {formatManilaShort(booking.created_at)}
+                                            </span>
+                                        )}
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-1 shrink-0">
@@ -369,6 +421,7 @@ export function AdminBookings() {
                                 <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">ID</th>
                                 <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Customer</th>
                                 <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Details</th>
+                                <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Booked At</th>
                                 <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Status</th>
                                 <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase text-right">Actions</th>
                             </tr>
@@ -376,25 +429,28 @@ export function AdminBookings() {
                         <tbody className="divide-y divide-gray-100">
                             {loading ? (
                                 <tr>
-                                    <td colSpan="5" className="px-4 py-8 text-center text-gray-500">
+                                    <td colSpan="6" className="px-4 py-8 text-center text-gray-500">
                                         Loading bookings...
                                     </td>
                                 </tr>
                             ) : filteredBookings.length === 0 ? (
                                 <tr>
-                                    <td colSpan="5" className="px-4 py-8 text-center text-gray-500">
+                                    <td colSpan="6" className="px-4 py-8 text-center text-gray-500">
                                         No bookings found matching your search.
                                     </td>
                                 </tr>
                             ) : (
                                 currentBookings.map((booking) => (
-                                    <tr key={booking.id} className="hover:bg-gray-50/50">
+                                    <tr key={booking.id} className={`hover:bg-gray-50/50 ${booking.id === mostRecentId ? 'border-l-2 border-l-teal-400 bg-teal-50/30' : ''}`}>
                                         <td className="px-4 py-2.5">
                                             <span className="font-mono text-xs font-medium text-gray-600">{booking.id.substring(0, 8)}</span>
                                         </td>
                                         <td className="px-4 py-2.5">
                                             <p className="font-medium text-gray-900 leading-tight">{booking.customer_name}</p>
                                             <p className="text-xs text-gray-400 leading-tight">{booking.customer_phone}</p>
+                                            {booking.id === mostRecentId && (
+                                                <span className="inline-block mt-0.5 text-[10px] font-semibold bg-teal-100 text-teal-700 px-1.5 py-0.5 rounded-full">Recent</span>
+                                            )}
                                         </td>
                                         <td className="px-4 py-2.5">
                                             <p className="font-medium text-gray-800 leading-tight">{booking.courts?.name || 'Court'}</p>
@@ -411,6 +467,16 @@ export function AdminBookings() {
                                                     }
                                                 </span>
                                             </div>
+                                        </td>
+                                        <td className="px-4 py-2.5 whitespace-nowrap">
+                                            {booking.created_at ? (
+                                                <>
+                                                    <p className="text-xs font-medium text-gray-700 leading-tight">{formatManilaDate(booking.created_at)}</p>
+                                                    <p className="text-xs text-gray-400 leading-tight">{formatManilaTime(booking.created_at)}</p>
+                                                </>
+                                            ) : (
+                                                <span className="text-xs text-gray-400">—</span>
+                                            )}
                                         </td>
                                         <td className="px-4 py-2.5">
                                             <Badge variant={getStatusColor(booking.status)}>{booking.status}</Badge>
