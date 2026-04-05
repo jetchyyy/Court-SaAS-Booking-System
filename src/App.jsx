@@ -9,6 +9,7 @@ import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { AdminLogin } from './pages/AdminLogin';
 import { ChangePassword } from './pages/admin/AdminChangepassword';
 import { TimeSlotManagement } from './pages/admin/TimeSlotManagement';
+import { AdminQRCodes } from './pages/admin/AdminQRCodes';
 import { Home } from './pages/Home';
 import { SplashScreen } from './components/SplashScreen';
 import { useState } from 'react';
@@ -33,6 +34,7 @@ function App() {
             <Route path="analytics" element={<AdminAnalytics />} />
             <Route path="change-password" element={<ChangePassword />} />
             <Route path="time-slots" element={<TimeSlotManagement />} />
+            <Route path="qr-codes" element={<AdminQRCodes />} />
           </Route>
         </Routes>
       </BrowserRouter>

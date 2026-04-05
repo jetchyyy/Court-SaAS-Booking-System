@@ -104,31 +104,48 @@ export function AdminCalendar() {
                             const dayBookings = getBookingsForDate(day);
                             const isSelected = isSameDay(day, selectedDate);
                             const isCurrentMonth = isSameMonth(day, currentMonth);
+                            const count = dayBookings.length;
 
                             return (
                                 <button
                                     key={day.toString()}
                                     onClick={() => setSelectedDate(day)}
                                     className={`
-                                        min-h-[80px] p-2 rounded-xl text-left transition-all relative
+                                        min-h-[64px] p-2 rounded-xl text-left transition-all relative flex flex-col
                                         ${isSelected ? 'ring-2 ring-brand-green bg-brand-green/5' : 'hover:bg-gray-50'}
                                         ${!isCurrentMonth ? 'opacity-40' : ''}
                                     `}
                                 >
                                     <span className={`
-                                        text-sm font-medium block mb-1
+                                        text-sm font-medium block
                                         ${isSelected ? 'text-brand-green-dark' : 'text-gray-700'}
                                     `}>
                                         {format(day, 'd')}
                                     </span>
 
-                                    {/* Indicators */}
-                                    <div className="space-y-1">
-                                        {/* Show dots for each booking on this date (max 4) */}
-                                        {Array.from({ length: Math.min(dayBookings.length, 4) }).map((_, i) => (
-                                            <div key={i} className="h-1.5 rounded-full bg-brand-orange w-full opacity-80"></div>
-                                        ))}
-                                    </div>
+                                    {/* Booking indicator */}
+                                    {count > 0 && (
+                                        <div className="mt-auto pt-1">
+                                            {count <= 3 ? (
+                                                <div className="flex flex-col gap-[3px]">
+                                                    {Array.from({ length: count }).map((_, i) => (
+                                                        <div key={i} className="h-1 rounded-full bg-brand-orange w-full opacity-80" />
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-center gap-1">
+                                                    <div className="flex flex-col gap-[3px] flex-1">
+                                                        {Array.from({ length: 3 }).map((_, i) => (
+                                                            <div key={i} className="h-1 rounded-full bg-brand-orange w-full opacity-80" />
+                                                        ))}
+                                                    </div>
+                                                    <span className="text-[9px] font-bold text-brand-orange leading-none shrink-0">
+                                                        {count}
+                                                    </span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
                                 </button>
                             );
                         })}
@@ -136,42 +153,52 @@ export function AdminCalendar() {
                 </div>
 
                 {/* Day Detail View */}
-                <div className="lg:w-1/3 space-y-4">
-                    <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                        Schedule for <span className="text-brand-green-dark">{format(selectedDate, 'MMM do')}</span>
-                    </h2>
+                <div className="lg:w-1/3 flex flex-col gap-3">
+                    <div className="flex items-center justify-between">
+                        <h2 className="text-lg font-bold text-gray-800">
+                            Schedule for <span className="text-brand-green-dark">{format(selectedDate, 'MMM do')}</span>
+                        </h2>
+                        {selectedDayBookings.length > 0 && (
+                            <span className="text-xs font-semibold bg-brand-green/10 text-brand-green-dark px-2 py-0.5 rounded-full">
+                                {selectedDayBookings.length} booking{selectedDayBookings.length !== 1 ? 's' : ''}
+                            </span>
+                        )}
+                    </div>
 
-                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 min-h-[400px]">
+                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col" style={{ maxHeight: '520px' }}>
                         {selectedDayBookings.length > 0 ? (
-                            <div className="space-y-4">
+                            <div className="overflow-y-auto flex-1 p-3 space-y-2">
                                 {selectedDayBookings
                                     .sort((a, b) => a.start_time.localeCompare(b.start_time))
                                     .map((booking) => (
                                         <div
                                             key={booking.id}
                                             onClick={() => handleBookingClick(booking)}
-                                            className="p-3 rounded-xl bg-gray-50 border border-gray-100 hover:border-brand-green/30 hover:bg-white hover:shadow-sm cursor-pointer transition-all"
+                                            className="px-3 py-2 rounded-lg bg-gray-50 border border-gray-100 hover:border-brand-green/40 hover:bg-white hover:shadow-sm cursor-pointer transition-all flex items-center gap-3"
                                         >
-                                            <div className="flex justify-between items-start mb-2">
-                                                <span className="font-bold text-gray-800">{booking.start_time} - {booking.end_time}</span>
-                                                <Badge variant={booking.status === 'Confirmed' ? 'green' : booking.status === 'Cancelled' ? 'red' : 'orange'}>
-                                                    {booking.status}
-                                                </Badge>
+                                            {/* Time block */}
+                                            <div className="shrink-0 text-center bg-white border border-gray-200 rounded-lg px-2 py-1 min-w-[72px]">
+                                                <p className="text-xs font-bold text-brand-green-dark leading-tight">{booking.start_time}</p>
+                                                <p className="text-[10px] text-gray-400 leading-tight">{booking.end_time}</p>
                                             </div>
-                                            <p className="font-medium text-sm text-gray-900">{booking.customer_name}</p>
-                                            <p className="text-xs text-gray-500">{booking.courts?.name || 'N/A'}</p>
-                                            <p className="text-xs text-gray-400 mt-1">₱{booking.total_price}</p>
-                                            <div className="mt-2 pt-2 border-t border-gray-200 flex justify-between text-xs text-gray-400">
-                                                <span>ID: {booking.id.substring(0, 8)}</span>
-                                                <span className="text-brand-green font-medium">View Details →</span>
+
+                                            {/* Details */}
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm font-semibold text-gray-800 truncate">{booking.customer_name}</p>
+                                                <p className="text-xs text-gray-400 truncate">{booking.courts?.name || 'N/A'} · ₱{booking.total_price}</p>
                                             </div>
+
+                                            {/* Status badge */}
+                                            <Badge variant={booking.status === 'Confirmed' ? 'green' : booking.status === 'Cancelled' ? 'red' : 'orange'} className="shrink-0 text-[10px]">
+                                                {booking.status}
+                                            </Badge>
                                         </div>
                                     ))}
                             </div>
                         ) : (
-                            <div className="h-full flex flex-col items-center justify-center text-gray-400 py-12">
-                                <Calendar size={48} className="mb-4 opacity-20" />
-                                <p>{loading ? 'Loading bookings...' : 'No bookings for this date.'}</p>
+                            <div className="flex flex-col items-center justify-center text-gray-400 py-16">
+                                <Calendar size={40} className="mb-3 opacity-20" />
+                                <p className="text-sm">{loading ? 'Loading bookings...' : 'No bookings for this date.'}</p>
                             </div>
                         )}
                     </div>

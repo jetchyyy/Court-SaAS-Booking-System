@@ -122,45 +122,45 @@ export function BookingDetailsModal({ isOpen, onClose, booking, onUpdateStatus, 
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
                 {/* Header */}
-                <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50 shrink-0">
+                <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between bg-gray-50/50 shrink-0">
                     <div>
-                        <h2 className="text-xl font-bold text-gray-900">Booking Details</h2>
-                        <p className="text-sm text-gray-500 font-mono">ID: {booking.id?.substring(0, 8)}</p>
+                        <h2 className="text-lg font-bold text-gray-900">Booking Details</h2>
+                        <p className="text-xs text-gray-500 font-mono">ID: {booking.id?.substring(0, 8)}</p>
                     </div>
-                    <button onClick={onClose} className="p-2 hover:bg-gray-200 rounded-full transition-colors text-gray-500">
-                        <X size={20} />
+                    <button onClick={onClose} className="p-1.5 hover:bg-gray-200 rounded-full transition-colors text-gray-500">
+                        <X size={18} />
                     </button>
                 </div>
 
-                <div className="p-6 grid md:grid-cols-2 gap-8 overflow-y-auto">
+                <div className="p-4 grid md:grid-cols-2 gap-4 overflow-y-auto">
                     {/* Left Column: Booking Info */}
-                    <div className="space-y-6">
+                    <div className="space-y-4">
                         <div>
-                            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Customer Information</h3>
-                            <div className="space-y-3">
-                                <div className="flex items-start gap-3">
-                                    <User size={18} className="text-brand-green mt-0.5" />
+                            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Customer Information</h3>
+                            <div className="space-y-2">
+                                <div className="flex items-start gap-2">
+                                    <User size={15} className="text-brand-green mt-0.5" />
                                     <div>
-                                        <p className="font-semibold text-gray-900">{booking.customer_name}</p>
+                                        <p className="font-semibold text-gray-900 text-sm">{booking.customer_name}</p>
                                         <p className="text-xs text-gray-500">Customer Name</p>
                                     </div>
                                 </div>
-                                <div className="flex items-start gap-3">
-                                    <Mail size={18} className="text-brand-green mt-0.5" />
+                                <div className="flex items-start gap-2">
+                                    <Mail size={15} className="text-brand-green mt-0.5" />
                                     <div>
                                         <p className="font-medium text-gray-900 text-sm">{booking.customer_email}</p>
                                         <p className="text-xs text-gray-500">Email Address</p>
                                     </div>
                                 </div>
-                                <div className="flex items-start gap-3">
-                                    <Phone size={18} className="text-brand-green mt-0.5" />
+                                <div className="flex items-start gap-2">
+                                    <Phone size={15} className="text-brand-green mt-0.5" />
                                     <div>
                                         <p className="font-medium text-gray-900 text-sm">{booking.customer_phone}</p>
                                         <p className="text-xs text-gray-500">Phone Number</p>
                                     </div>
                                 </div>
-                                <div className="flex items-start gap-3">
-                                    <FileText size={18} className="text-brand-green mt-0.5" />
+                                <div className="flex items-start gap-2">
+                                    <FileText size={15} className="text-brand-green mt-0.5" />
                                     <div>
                                         <p className="font-medium text-gray-900 text-sm font-mono">{booking.notes || '-'}</p>
                                         <p className="text-xs text-gray-500">Reference Number</p>
@@ -171,26 +171,26 @@ export function BookingDetailsModal({ isOpen, onClose, booking, onUpdateStatus, 
                         </div>
 
                         <div>
-                            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Booking Details</h3>
-                            <div className="bg-brand-green-light/30 rounded-xl p-4 border border-brand-green/10 space-y-3">
+                            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Booking Details</h3>
+                            <div className="bg-brand-green-light/30 rounded-xl p-3 border border-brand-green/10 space-y-2">
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-2 text-brand-green-dark">
-                                        <MapPin size={16} />
+                                        <MapPin size={14} />
                                         <span className="font-semibold text-sm">{booking.courts?.name || 'Court'}</span>
                                     </div>
                                     <Badge variant={booking.status === 'Confirmed' ? 'green' : booking.status === 'Cancelled' ? 'red' : 'orange'}>{booking.status}</Badge>
                                 </div>
                                 <div className="flex gap-4 text-sm text-gray-700">
                                     <div className="flex items-center gap-1.5">
-                                        <Calendar size={14} className="text-gray-400" />
-                                        <span>{booking.booking_date ? format(new Date(booking.booking_date), 'MMMM d, yyyy') : '-'}</span>
+                                        <Calendar size={13} className="text-gray-400" />
+                                        <span className="text-sm">{booking.booking_date ? format(new Date(booking.booking_date), 'MMMM d, yyyy') : '-'}</span>
                                     </div>
                                 </div>
                                 {/* Display individual time slots as ranges */}
                                 {booking.booked_times && booking.booked_times.length > 0 && (
-                                    <div className="mt-2">
+                                    <div className="mt-1">
                                         <div className="flex items-start gap-1.5">
-                                            <Clock size={14} className="text-gray-400 mt-0.5" />
+                                            <Clock size={13} className="text-gray-400 mt-0.5" />
                                             <div className="flex flex-wrap gap-2">
                                                 {booking.booked_times.map((time, idx) => {
                                                     // Calculate end time (1 hour after start)
@@ -208,9 +208,9 @@ export function BookingDetailsModal({ isOpen, onClose, booking, onUpdateStatus, 
                                         </div>
                                     </div>
                                 )}
-                                <div className="pt-2 border-t border-brand-green/10 flex justify-between items-center">
+                                <div className="pt-1.5 border-t border-brand-green/10 flex justify-between items-center">
                                     <span className="text-xs text-gray-500">Total Amount</span>
-                                    <span className="font-bold text-lg text-brand-orange">
+                                    <span className="font-bold text-base text-brand-orange">
                                         ₱{booking.total_price || 0}
                                     </span>
                                 </div>
@@ -219,14 +219,14 @@ export function BookingDetailsModal({ isOpen, onClose, booking, onUpdateStatus, 
 
                         {/* Reschedule History with Refund Info */}
                         {booking.rescheduled_from && (
-                            <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
-                                <div className="flex items-center gap-2 mb-3">
-                                    <History size={16} className="text-brand-orange" />
+                            <div className="bg-orange-50 border border-orange-200 rounded-xl p-3">
+                                <div className="flex items-center gap-2 mb-2">
+                                    <History size={14} className="text-brand-orange" />
                                     <h4 className="text-xs font-bold text-brand-orange uppercase tracking-wider">
                                         Rescheduled Booking
                                     </h4>
                                 </div>
-                                <div className="space-y-3 text-sm">
+                                <div className="space-y-2 text-sm">
                                     {/* Original Booking Info */}
                                     <div className="bg-white/50 rounded-lg p-3 space-y-2">
                                         <p className="text-xs font-semibold text-gray-600 uppercase">Original Booking</p>
@@ -324,10 +324,10 @@ export function BookingDetailsModal({ isOpen, onClose, booking, onUpdateStatus, 
 
                     {/* Right Column: Proof of Payment */}
                     <div>
-                        <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                        <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-2">
                             <CreditCard size={14} /> Proof of Payment
                         </h3>
-                        <div className="space-y-3">
+                        <div className="space-y-2">
                             {booking.proof_of_payment_url ? (
                                 <div className="aspect-[3/4] bg-gray-100 rounded-xl border-2 border-gray-200 flex items-center justify-center overflow-hidden relative group">
                                     {imageLoading ? (
@@ -376,33 +376,33 @@ export function BookingDetailsModal({ isOpen, onClose, booking, onUpdateStatus, 
                 </div>
 
                 {/* Footer Actions */}
-                <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-between gap-3">
-                    <Button variant="ghost" onClick={onClose}>Close</Button>
-                    <div className="flex gap-2">
+                <div className="px-4 py-3 bg-gray-50 border-t border-gray-100 flex flex-wrap items-center justify-between gap-2 shrink-0">
+                    <Button variant="ghost" onClick={onClose} className="text-sm px-3 py-1.5">Close</Button>
+                    <div className="flex flex-wrap gap-2">
                         {(booking.status === 'Confirmed' || booking.status === 'Rescheduled') && (
                             <>
                                 <Button
                                     onClick={() => onReschedule(booking)}
-                                    className="bg-orange-50 text-brand-orange hover:bg-orange-100 border border-orange-200 flex items-center gap-2"
+                                    className="bg-orange-50 text-brand-orange hover:bg-orange-100 border border-orange-200 flex items-center gap-1.5 text-sm px-3 py-1.5"
                                 >
-                                    <RefreshCw size={16} />
+                                    <RefreshCw size={14} />
                                     Reschedule
                                 </Button>
-                                <Button onClick={() => { onUpdateStatus(booking.id, 'Cancelled'); onClose(); }} className="bg-red-50 text-red-600 hover:bg-red-100 border border-red-200">
-                                    Cancel Booking
+                                <Button onClick={() => { onUpdateStatus(booking.id, 'Cancelled'); onClose(); }} className="bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 text-sm px-3 py-1.5">
+                                    Cancel
                                 </Button>
                                 <Button
                                     onClick={handleDownloadReceipt}
                                     disabled={!booking.proof_of_payment_url}
-                                    className="bg-brand-green hover:bg-brand-green-dark text-white flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="bg-brand-green hover:bg-brand-green-dark text-white flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed text-sm px-3 py-1.5"
                                 >
-                                    <Download size={16} />
+                                    <Download size={14} />
                                     Download Receipt
                                 </Button>
                             </>
                         )}
                         {booking.status === 'Cancelled' && (
-                            <p className="text-sm text-gray-500 py-2">This booking has been cancelled</p>
+                            <p className="text-sm text-gray-500 py-1">This booking has been cancelled</p>
                         )}
                     </div>
                 </div>

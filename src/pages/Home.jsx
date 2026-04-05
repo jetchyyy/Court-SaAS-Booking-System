@@ -431,8 +431,9 @@ export function Home() {
             // ✅ FIXED: Don't close modal here - let modal show success screen first!
             invalidateBookingCaches();
             await loadBookings({ force: true });
-            setSelectedTimes([]);
-            // Removed: setIsModalOpen(false) - Modal closes when user clicks "Done"
+            // NOTE: setSelectedTimes([]) is intentionally NOT here.
+            // Clearing times here would wipe bookingData.times before step 5 renders,
+            // causing the receipt to show '-' for time. Times are cleared in onClose instead.
 
             return newBooking; // Return booking so modal can display it
 
@@ -544,7 +545,10 @@ export function Home() {
 
             <BookingModal
                 isOpen={isModalOpen}
-                onClose={() => setIsModalOpen(false)}
+                onClose={() => {
+                    setIsModalOpen(false);
+                    setSelectedTimes([]); // Clear after modal closes so receipt has times
+                }}
                 bookingData={{ court: selectedCourt, date: selectedDate, times: selectedTimes }}
                 onConfirm={handleBookingConfirm}
             />

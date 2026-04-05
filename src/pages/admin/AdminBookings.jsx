@@ -12,6 +12,8 @@ export function AdminBookings() {
     const [bookings, setBookings] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [filterStatus, setFilterStatus] = useState('All');
+    const [filterDate, setFilterDate] = useState('today');
+    const [sortOrder, setSortOrder] = useState('morning');
     const [selectedBooking, setSelectedBooking] = useState(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isRescheduleModalOpen, setIsRescheduleModalOpen] = useState(false);
@@ -62,7 +64,7 @@ export function AdminBookings() {
     // Reset pagination when search or filter changes
     useEffect(() => {
         setCurrentPage(1);
-    }, [searchTerm, filterStatus]);
+    }, [searchTerm, filterStatus, filterDate, sortOrder]);
 
     const loadBookings = async ({ force = false } = {}) => {
         try {
@@ -177,15 +179,36 @@ export function AdminBookings() {
         });
     };
 
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
+
     const filteredBookings = bookings.filter(b => {
         const matchesSearch = b.customer_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
             b.id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
             b.customer_email?.toLowerCase().includes(searchTerm.toLowerCase());
 
-        if (filterStatus === 'All') return matchesSearch;
-        return matchesSearch && b.status === filterStatus;
+        const matchesDate = filterDate === 'today'
+            ? b.booking_date === todayStr
+            : true;
+
+        const matchesStatus = filterStatus === 'All' || b.status === filterStatus;
+
+        return matchesSearch && matchesDate && matchesStatus;
     }).sort((a, b) => {
-        // Sort by booking date (newest first)
+        if (sortOrder === 'morning') {
+            // Sort by date ascending, then by start time ascending (morning to evening)
+            const dateDiff = new Date(a.booking_date) - new Date(b.booking_date);
+            if (dateDiff !== 0) return dateDiff;
+            const getStartMinutes = (booking) => {
+                const t = booking.start_time ||
+                    (Array.isArray(booking.booked_times) && booking.booked_times.length > 0
+                        ? booking.booked_times[0] : null);
+                if (!t) return 0;
+                const [h, m] = t.split(':').map(Number);
+                return h * 60 + (m || 0);
+            };
+            return getStartMinutes(a) - getStartMinutes(b);
+        }
+        // Default: newest date first
         return new Date(b.booking_date) - new Date(a.booking_date);
     });
 
@@ -217,13 +240,63 @@ export function AdminBookings() {
 
     return (
         <div className="space-y-6 w-full max-w-full">
+            {/* Row 1: Title + Search */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                     <h1 className="text-2xl font-bold font-display text-brand-green-dark">Booking Management</h1>
                     <p className="text-gray-500">View and manage customer bookings</p>
                 </div>
 
-                <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+                <div className="relative w-full sm:w-64">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                    <input
+                        type="text"
+                        placeholder="Search name, ref..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="pl-10 pr-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-green/20 w-full"
+                    />
+                </div>
+            </div>
+
+            {/* Row 2: Filters */}
+            <div className="flex flex-wrap gap-3">
+                    <div className="flex bg-gray-100 p-1 rounded-xl">
+                        {[{ label: 'Earliest First', value: 'morning' }, { label: 'Newest', value: 'newest' }].map(({ label, value }) => (
+                            <button
+                                key={value}
+                                onClick={() => setSortOrder(value)}
+                                className={`
+                                    px-4 py-2 text-sm font-medium rounded-lg transition-all
+                                    ${sortOrder === value
+                                        ? 'bg-white text-brand-green-dark shadow-sm'
+                                        : 'text-gray-500 hover:text-gray-700'
+                                    }
+                                `}
+                            >
+                                {label}
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="flex bg-gray-100 p-1 rounded-xl">
+                        {[{ label: 'Today', value: 'today' }, { label: 'All Dates', value: 'all' }].map(({ label, value }) => (
+                            <button
+                                key={value}
+                                onClick={() => setFilterDate(value)}
+                                className={`
+                                    px-4 py-2 text-sm font-medium rounded-lg transition-all
+                                    ${filterDate === value
+                                        ? 'bg-white text-brand-green-dark shadow-sm'
+                                        : 'text-gray-500 hover:text-gray-700'
+                                    }
+                                `}
+                            >
+                                {label}
+                            </button>
+                        ))}
+                    </div>
+
                     <div className="flex bg-gray-100 p-1 rounded-xl">
                         {['All', 'Confirmed', 'Rescheduled', 'Cancelled'].map((status) => (
                             <button
@@ -241,86 +314,114 @@ export function AdminBookings() {
                             </button>
                         ))}
                     </div>
-
-                    <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                        <input
-                            type="text"
-                            placeholder="Search name, ref..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="pl-10 pr-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-green/20 w-full"
-                        />
-                    </div>
-                </div>
             </div>
 
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left">
+
+                {/* Mobile card list */}
+                <div className="block sm:hidden divide-y divide-gray-100">
+                    {loading ? (
+                        <p className="px-4 py-8 text-center text-gray-500 text-sm">Loading bookings...</p>
+                    ) : filteredBookings.length === 0 ? (
+                        <p className="px-4 py-8 text-center text-gray-500 text-sm">No bookings found matching your search.</p>
+                    ) : (
+                        currentBookings.map((booking) => (
+                            <div key={booking.id} className="px-4 py-3 flex items-center justify-between gap-3">
+                                <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <p className="font-medium text-gray-900 text-sm leading-tight truncate">{booking.customer_name}</p>
+                                        <Badge variant={getStatusColor(booking.status)}>{booking.status}</Badge>
+                                    </div>
+                                    <p className="text-xs text-gray-400 leading-tight">{booking.customer_phone}</p>
+                                    <div className="flex items-center gap-2 text-xs text-gray-400 mt-0.5 flex-wrap">
+                                        <span className="font-medium text-gray-600">{booking.courts?.name || 'Court'}</span>
+                                        <span className="flex items-center gap-1">
+                                            <Calendar size={11} />
+                                            {booking.booking_date ? format(new Date(booking.booking_date), 'MMM d, yyyy') : '-'}
+                                        </span>
+                                        <span className="flex items-center gap-1">
+                                            <Clock size={11} />
+                                            {booking.booked_times && Array.isArray(booking.booked_times) && booking.booked_times.length > 0
+                                                ? booking.booked_times.map(time => formatTime12Hour(time)).join(', ')
+                                                : `${formatTime12Hour(booking.start_time)} - ${formatTime12Hour(booking.end_time)}`
+                                            }
+                                        </span>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-1 shrink-0">
+                                    <Button size="sm" variant="ghost" onClick={() => { setSelectedBooking(booking); setIsModalOpen(true); }} className="text-gray-500 hover:text-brand-green h-8 w-8 p-0 grid place-items-center" title="View Details">
+                                        <Eye size={15} />
+                                    </Button>
+                                    <Button size="sm" variant="ghost" onClick={() => handleDeleteClick(booking)} className="text-gray-400 hover:text-red-500 h-8 w-8 p-0 grid place-items-center">
+                                        <Trash2 size={15} />
+                                    </Button>
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+
+                {/* Desktop table */}
+                <div className="hidden sm:block overflow-x-auto">
+                    <table className="w-full text-left text-sm">
                         <thead className="bg-gray-50 border-b border-gray-100">
                             <tr>
-                                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase">ID</th>
-                                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase">Customer</th>
-                                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase">Details</th>
-                                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase">Status</th>
-                                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase text-right">Actions</th>
+                                <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">ID</th>
+                                <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Customer</th>
+                                <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Details</th>
+                                <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase">Status</th>
+                                <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase text-right">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                             {loading ? (
                                 <tr>
-                                    <td colSpan="5" className="px-6 py-12 text-center text-gray-500">
+                                    <td colSpan="5" className="px-4 py-8 text-center text-gray-500">
                                         Loading bookings...
                                     </td>
                                 </tr>
                             ) : filteredBookings.length === 0 ? (
                                 <tr>
-                                    <td colSpan="5" className="px-6 py-12 text-center text-gray-500">
+                                    <td colSpan="5" className="px-4 py-8 text-center text-gray-500">
                                         No bookings found matching your search.
                                     </td>
                                 </tr>
                             ) : (
                                 currentBookings.map((booking) => (
                                     <tr key={booking.id} className="hover:bg-gray-50/50">
-                                        <td className="px-6 py-4">
+                                        <td className="px-4 py-2.5">
                                             <span className="font-mono text-xs font-medium text-gray-600">{booking.id.substring(0, 8)}</span>
                                         </td>
-                                        <td className="px-6 py-4">
-                                            <div>
-                                                <p className="font-semibold text-gray-900">{booking.customer_name}</p>
-                                                <p className="text-xs text-gray-500">{booking.customer_email}</p>
-                                                <p className="text-xs text-gray-500">{booking.customer_phone}</p>
+                                        <td className="px-4 py-2.5">
+                                            <p className="font-medium text-gray-900 leading-tight">{booking.customer_name}</p>
+                                            <p className="text-xs text-gray-400 leading-tight">{booking.customer_phone}</p>
+                                        </td>
+                                        <td className="px-4 py-2.5">
+                                            <p className="font-medium text-gray-800 leading-tight">{booking.courts?.name || 'Court'}</p>
+                                            <div className="flex items-center gap-2 text-xs text-gray-400 mt-0.5">
+                                                <span className="flex items-center gap-1">
+                                                    <Calendar size={11} />
+                                                    {booking.booking_date ? format(new Date(booking.booking_date), 'MMM d, yyyy') : '-'}
+                                                </span>
+                                                <span className="flex items-center gap-1">
+                                                    <Clock size={11} />
+                                                    {booking.booked_times && Array.isArray(booking.booked_times) && booking.booked_times.length > 0
+                                                        ? booking.booked_times.map(time => formatTime12Hour(time)).join(', ')
+                                                        : `${formatTime12Hour(booking.start_time)} - ${formatTime12Hour(booking.end_time)}`
+                                                    }
+                                                </span>
                                             </div>
                                         </td>
-                                        <td className="px-6 py-4">
-                                            <div className="space-y-1">
-                                                <p className="text-sm font-medium text-gray-800">{booking.courts?.name || 'Court'}</p>
-                                                <div className="flex items-center gap-2 text-xs text-gray-500">
-                                                    <span className="flex items-center gap-1">
-                                                        <Calendar size={12} />
-                                                        {booking.booking_date ? format(new Date(booking.booking_date), 'MMM d, yyyy') : '-'}
-                                                    </span>
-                                                    <span className="flex items-center gap-1">
-                                                        <Clock size={12} />
-                                                        {booking.booked_times && Array.isArray(booking.booked_times) && booking.booked_times.length > 0
-                                                            ? booking.booked_times.map(time => formatTime12Hour(time)).join(', ')
-                                                            : `${formatTime12Hour(booking.start_time)} - ${formatTime12Hour(booking.end_time)}`
-                                                        }
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4">
+                                        <td className="px-4 py-2.5">
                                             <Badge variant={getStatusColor(booking.status)}>{booking.status}</Badge>
                                         </td>
-                                        <td className="px-6 py-4 text-right">
-                                            <div className="flex items-center justify-end gap-2">
-                                                <Button size="sm" variant="ghost" onClick={() => { setSelectedBooking(booking); setIsModalOpen(true); }} className="text-gray-500 hover:text-brand-green h-8 w-8 p-0 grid place-items-center" title="View Details">
-                                                    <Eye size={16} />
+                                        <td className="px-4 py-2.5 text-right">
+                                            <div className="flex items-center justify-end gap-1">
+                                                <Button size="sm" variant="ghost" onClick={() => { setSelectedBooking(booking); setIsModalOpen(true); }} className="text-gray-500 hover:text-brand-green h-7 w-7 p-0 grid place-items-center" title="View Details">
+                                                    <Eye size={14} />
                                                 </Button>
-                                                <Button size="sm" variant="ghost" onClick={() => handleDeleteClick(booking)} className="text-gray-400 hover:text-red-500 h-8 w-8 p-0 grid place-items-center">
-                                                    <Trash2 size={16} />
+                                                <Button size="sm" variant="ghost" onClick={() => handleDeleteClick(booking)} className="text-gray-400 hover:text-red-500 h-7 w-7 p-0 grid place-items-center">
+                                                    <Trash2 size={14} />
                                                 </Button>
                                             </div>
                                         </td>
