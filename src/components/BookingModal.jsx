@@ -16,6 +16,7 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
     const [downloadError, setDownloadError] = useState(null);
     const [submitError, setSubmitError] = useState(null);
     const [showConflictModal, setShowConflictModal] = useState(false); // Blocking conflict overlay
+    const [showBlockedModal, setShowBlockedModal] = useState(false); // Admin-blocked slot overlay
     const [bookingResult, setBookingResult] = useState(null);
     const [termsAccepted, setTermsAccepted] = useState(false);
     const [qrCodes, setQrCodes] = useState(null); // loaded from Supabase CMS
@@ -48,6 +49,7 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
             isSubmittingRef.current = false; // Reset synchronous guard
             setSubmitError(null);
             setShowConflictModal(false);
+            setShowBlockedModal(false);
             setBookingResult(null);
             setTermsAccepted(false);
             setIsDownloading(false);
@@ -118,7 +120,19 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
                 );
 
                 if (freshCheck.hasConflict) {
-                    const conflictTimes = freshCheck.conflicts.join(', ');
+                    const conflictTimes = freshCheck.conflicts.map(t => {
+                        const [h] = t.split(':').map(Number);
+                        const period = h >= 12 ? 'PM' : 'AM';
+                        const display = h === 0 ? 12 : h > 12 ? h - 12 : h;
+                        return `${display}:00 ${period}`;
+                    }).join(', ');
+
+                    if (freshCheck.reason === 'admin_blocked') {
+                        throw new Error(
+                            `🚫 These time slots have been blocked by the admin and are no longer available for booking: ${conflictTimes}. Please select different time slots.`
+                        );
+                    }
+
                     throw new Error(
                         `❌ Time slot conflict! The following times were just booked by someone else: ${conflictTimes}. Please select different time slots.`
                     );
@@ -155,6 +169,13 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
 
             // Display user-friendly error message
             let errorMessage = error.message || 'An unexpected error occurred. Please try again.';
+
+            // Admin-blocked slot error — force exit
+            if (errorMessage.includes('blocked by the admin')) {
+                setSubmitError(errorMessage);
+                setShowBlockedModal(true);
+                return;
+            }
 
             // Check if it's a conflict error — show blocking modal
             if (errorMessage.includes('conflict') || errorMessage.includes('already booked')) {
@@ -423,6 +444,38 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="fixed inset-0 bg-black/30 backdrop-blur-sm transition-opacity" onClick={handleClose}></div>
+
+            {/* Admin-Blocked Slot Overlay */}
+            {showBlockedModal && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm"></div>
+                    <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full animate-in zoom-in-95 duration-200 overflow-hidden">
+                        <div className="p-6 sm:p-8 text-center">
+                            <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <AlertCircle size={36} />
+                            </div>
+                            <h2 className="text-xl font-bold text-gray-900 mb-2">Time Slot Unavailable</h2>
+                            <p className="text-sm text-gray-600 mb-4">
+                                One or more of your selected time slots have been blocked by the admin and cannot be booked.
+                            </p>
+                            <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6 text-left">
+                                <p className="text-sm text-red-800 whitespace-pre-line">{submitError}</p>
+                            </div>
+                            <Button
+                                size="lg"
+                                className="w-full text-white bg-brand-green hover:bg-brand-green-dark"
+                                onClick={() => {
+                                    setShowBlockedModal(false);
+                                    setSubmitError(null);
+                                    handleClose();
+                                }}
+                            >
+                                Close &amp; Select Different Time Slots
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Blocking Conflict Modal Overlay */}
             {showConflictModal && (

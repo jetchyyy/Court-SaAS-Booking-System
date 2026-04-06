@@ -1,10 +1,12 @@
 import { Plus, Trash2, Edit2, Power, AlertCircle, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Button, Card } from '../../components/ui';
 import { AdminActionModal } from '../../components/admin/AdminActionModal';
 import { createCourt, deleteCourt, listCourts, subscribeToCourts, updateCourt, toggleCourtStatus } from '../../services/courts';
 
 export function AdminCourts() {
+    const queryClient = useQueryClient();
     const [courts, setCourts] = useState([]);
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [isEditMode, setIsEditMode] = useState(false);
@@ -115,6 +117,7 @@ export function AdminCourts() {
             }
 
             await loadCourts({ force: true });
+            queryClient.invalidateQueries(['courts']);
             resetForm();
         } catch (err) {
             console.error('Error saving court:', err);
@@ -179,6 +182,7 @@ export function AdminCourts() {
             action: async () => {
                 await toggleCourtStatus(court.id, newStatus);
                 await loadCourts({ force: true });
+                queryClient.invalidateQueries(['courts']);
             }
         });
     };
@@ -195,6 +199,7 @@ export function AdminCourts() {
             action: async () => {
                 await deleteCourt(court.id);
                 await loadCourts({ force: true });
+                queryClient.invalidateQueries(['courts']);
             }
         });
     };

@@ -144,7 +144,10 @@ export function Home() {
         if (!selectedCourt) return;
 
         const dateStr = format(selectedDate, 'yyyy-MM-dd');
-        const cacheKey = `blocked-${selectedCourt.id}-${dateStr}`;
+        const isExclusive = selectedCourt.type === 'Exclusive / Whole Court';
+        const cacheKey = isExclusive
+            ? `blocked-all-${dateStr}`
+            : `blocked-${selectedCourt.id}-${dateStr}`;
 
         if (!force) {
             const cached = getCached(blockedCache, cacheKey);
@@ -158,17 +161,26 @@ export function Home() {
         try {
             const { supabase } = await import('../lib/supabaseClient');
 
-            const { data, error } = await supabase
+            let q = supabase
                 .from('blocked_time_slots')
                 .select('time_slot')
-                .eq('court_id', selectedCourt.id)
                 .eq('blocked_date', dateStr);
+
+            if (isExclusive && activeCourts.length > 0) {
+                // For exclusive courts, a block on ANY court blocks this slot
+                q = q.in('court_id', activeCourts.map(c => c.id));
+            } else {
+                q = q.eq('court_id', selectedCourt.id);
+            }
+
+            const { data, error } = await q;
 
             if (error) {
                 console.error('Error loading blocked slots:', error);
                 setBlockedSlots([]);
             } else {
-                const result = data?.map(item => item.time_slot) || [];
+                // Deduplicate — multiple courts may have the same slot blocked
+                const result = [...new Set(data?.map(item => item.time_slot) || [])];
                 setCache(blockedCache, cacheKey, result);
                 setBlockedSlots(result);
             }

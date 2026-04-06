@@ -1,5 +1,5 @@
 import { format, startOfToday, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isBefore, isSameDay } from 'date-fns';
-import { Calendar, ChevronLeft, ChevronRight, Clock, Lock, Unlock, X, Users } from 'lucide-react';
+import { AlertCircle, ChevronLeft, ChevronRight, Clock, Lock, Unlock, X, Users } from 'lucide-react';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '../../components/ui';
@@ -26,8 +26,8 @@ export function TimeSlotManagement() {
             if (error) throw error;
             return data || [];
         },
-        staleTime: 5 * 60 * 1000, // 5 minutes
-        cacheTime: 10 * 60 * 1000, // 10 minutes
+        staleTime: 5 * 60 * 1000,
+        cacheTime: 10 * 60 * 1000,
         onSuccess: (data) => {
             if (data && data.length > 0 && !selectedCourt) {
                 setSelectedCourt(data[0]);
@@ -40,69 +40,79 @@ export function TimeSlotManagement() {
         setSelectedCourt(courts[0]);
     }
 
+    const isExclusiveCourt = selectedCourt?.type === 'Exclusive / Whole Court';
     const dateStr = format(selectedDate, 'yyyy-MM-dd');
 
     // Fetch blocked slots with caching
     const { data: blockedSlots = [], isLoading: loadingBlocked } = useQuery({
-        queryKey: ['blockedSlots', selectedCourt?.id, dateStr],
+        queryKey: isExclusiveCourt ? ['blockedSlots', 'all-courts', dateStr] : ['blockedSlots', selectedCourt?.id, dateStr],
         queryFn: async () => {
             if (!selectedCourt) return [];
-            
-            const { data, error } = await supabase
-                .from('blocked_time_slots')
-                .select('*')
-                .eq('court_id', selectedCourt.id)
-                .eq('blocked_date', dateStr);
+
+            let q = supabase.from('blocked_time_slots').select('*').eq('blocked_date', dateStr);
+            if (isExclusiveCourt && courts.length > 0) {
+                q = q.in('court_id', courts.map(c => c.id));
+            } else {
+                q = q.eq('court_id', selectedCourt.id);
+            }
+            const { data, error } = await q;
 
             if (error) throw error;
             return data || [];
         },
         enabled: !!selectedCourt,
-        staleTime: 2 * 60 * 1000, // 2 minutes
-        cacheTime: 5 * 60 * 1000, // 5 minutes
+        staleTime: 2 * 60 * 1000,
+        cacheTime: 5 * 60 * 1000,
     });
 
     // Fetch booked slots with caching
     const { data: bookedSlots = [], isLoading: loadingBooked } = useQuery({
-        queryKey: ['bookedSlots', selectedCourt?.id, dateStr],
+        queryKey: isExclusiveCourt ? ['bookedSlots', 'all-courts', dateStr] : ['bookedSlots', selectedCourt?.id, dateStr],
         queryFn: async () => {
             if (!selectedCourt) return [];
-            
-            const { data, error } = await supabase
-                .from('bookings')
-                .select('*')
-                .eq('court_id', selectedCourt.id)
-                .eq('booking_date', dateStr)
-                .in('status', ['confirmed', 'pending']);
+
+            let q = supabase.from('bookings').select('*').eq('booking_date', dateStr).in('status', ['confirmed', 'pending']);
+            if (isExclusiveCourt && courts.length > 0) {
+                q = q.in('court_id', courts.map(c => c.id));
+            } else {
+                q = q.eq('court_id', selectedCourt.id);
+            }
+            const { data, error } = await q;
 
             if (error) throw error;
             return data || [];
         },
         enabled: !!selectedCourt,
-        staleTime: 1 * 60 * 1000, // 1 minute (bookings change more frequently)
-        cacheTime: 3 * 60 * 1000, // 3 minutes
+        staleTime: 1 * 60 * 1000,
+        cacheTime: 3 * 60 * 1000,
     });
 
     // Mutation for blocking slots
     const blockSlotsMutation = useMutation({
         mutationFn: async (slots) => {
-            const blocksToInsert = slots.map(slot => ({
-                court_id: selectedCourt.id,
-                blocked_date: dateStr,
-                time_slot: slot,
-                reason: 'Admin blocked'
-            }));
+            const courtIds = isExclusiveCourt ? courts.map(c => c.id) : [selectedCourt.id];
+            const blocksToInsert = courtIds.flatMap(courtId =>
+                slots.map(slot => ({
+                    court_id: courtId,
+                    blocked_date: dateStr,
+                    time_slot: slot,
+                    reason: 'Admin blocked'
+                }))
+            );
 
             const { error } = await supabase
                 .from('blocked_time_slots')
-                .insert(blocksToInsert);
+                .upsert(blocksToInsert, { onConflict: 'court_id,blocked_date,time_slot', ignoreDuplicates: true });
 
             if (error) throw error;
             return blocksToInsert;
         },
         onSuccess: () => {
-            // Invalidate and refetch blocked slots
-            queryClient.invalidateQueries(['blockedSlots', selectedCourt?.id, dateStr]);
+            if (isExclusiveCourt) {
+                queryClient.invalidateQueries(['blockedSlots', 'all-courts', dateStr]);
+            } else {
+                queryClient.invalidateQueries(['blockedSlots', selectedCourt?.id, dateStr]);
+            }
             setSelectedSlots([]);
         },
         onError: (err) => {
@@ -114,10 +124,11 @@ export function TimeSlotManagement() {
     // Mutation for unblocking slots
     const unblockSlotsMutation = useMutation({
         mutationFn: async (slots) => {
+            const courtIds = isExclusiveCourt ? courts.map(c => c.id) : [selectedCourt.id];
             const { error } = await supabase
                 .from('blocked_time_slots')
                 .delete()
-                .eq('court_id', selectedCourt.id)
+                .in('court_id', courtIds)
                 .eq('blocked_date', dateStr)
                 .in('time_slot', slots);
 
@@ -125,8 +136,11 @@ export function TimeSlotManagement() {
             return slots;
         },
         onSuccess: () => {
-            // Invalidate and refetch blocked slots
-            queryClient.invalidateQueries(['blockedSlots', selectedCourt?.id, dateStr]);
+            if (isExclusiveCourt) {
+                queryClient.invalidateQueries(['blockedSlots', 'all-courts', dateStr]);
+            } else {
+                queryClient.invalidateQueries(['blockedSlots', selectedCourt?.id, dateStr]);
+            }
             setSelectedSlots([]);
         },
         onError: (err) => {
@@ -136,13 +150,13 @@ export function TimeSlotManagement() {
     });
 
     const handleBlockSlots = () => {
-        if (selectedSlots.length === 0) return;
-        blockSlotsMutation.mutate(selectedSlots);
+        if (selectedUnblockedSlots.length === 0) return;
+        blockSlotsMutation.mutate(selectedUnblockedSlots);
     };
 
     const handleUnblockSlots = () => {
-        if (selectedSlots.length === 0) return;
-        unblockSlotsMutation.mutate(selectedSlots);
+        if (selectedBlockedSlots.length === 0) return;
+        unblockSlotsMutation.mutate(selectedBlockedSlots);
     };
 
     const toggleSlot = (timeSlot, isBooked) => {
@@ -211,32 +225,43 @@ export function TimeSlotManagement() {
         });
     };
 
-    const loading = loadingBlocked || loadingBooked || blockSlotsMutation.isLoading || unblockSlotsMutation.isLoading;
+    const getBlockedCourtNames = (slotId) => {
+        return blockedSlots
+            .filter(slot => normalizeTimeSlot(slot.time_slot) === normalizeTimeSlot(slotId))
+            .map(slot => courts.find(c => c.id === slot.court_id)?.name)
+            .filter(Boolean);
+    };
+
+    const isBlocking = blockSlotsMutation.isLoading;
+    const isUnblocking = unblockSlotsMutation.isLoading;
+    const loading = loadingBlocked || loadingBooked || isBlocking || isUnblocking;
+
+    // Split selected slots into unblocked (can be blocked) and blocked (can be unblocked)
+    const selectedUnblockedSlots = selectedSlots.filter(id => !isSlotBlocked(id));
+    const selectedBlockedSlots = selectedSlots.filter(id => isSlotBlocked(id));
+
+    const TIME_SECTIONS = [
+        { title: 'Early Morning', range: [0, 1, 2, 3, 4, 5] },
+        { title: 'Morning', range: [6, 7, 8, 9, 10, 11] },
+        { title: 'Afternoon', range: [12, 13, 14, 15, 16, 17] },
+        { title: 'Evening', range: [18, 19, 20, 21, 22, 23] },
+    ];
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-6 w-full max-w-full overflow-x-hidden">
+            {/* Header */}
             <div>
                 <h1 className="text-2xl font-bold font-display text-brand-green-dark">Time Slot Management</h1>
-                <p className="text-gray-500">Block or unblock specific time slots to control availability</p>
+                <p className="text-gray-500 text-sm">Block or unblock time slots to control court availability</p>
             </div>
 
-            {/* Court Selector */}
-            <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Select Court</label>
-                <select
-                    value={selectedCourt?.id || ''}
-                    onChange={(e) => {
-                        const court = courts.find(c => c.id === e.target.value);
-                        setSelectedCourt(court);
-                        setSelectedSlots([]);
-                    }}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-brand-green focus:border-brand-green outline-none"
-                >
-                    {courts.map(court => (
-                        <option key={court.id} value={court.id}>{court.name}</option>
-                    ))}
-                </select>
-            </div>
+            {/* Exclusive court notice */}
+            {isExclusiveCourt && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-700 flex items-center gap-2">
+                    <AlertCircle size={15} className="shrink-0" />
+                    <span><strong>Exclusive / Whole Court</strong> — blocking or unblocking will apply to <strong>all courts</strong> simultaneously.</span>
+                </div>
+            )}
 
             <div className="grid lg:grid-cols-2 gap-6">
                 {/* Calendar */}
@@ -245,26 +270,26 @@ export function TimeSlotManagement() {
                         <h3 className="font-display font-semibold text-lg text-brand-green-dark">
                             {format(currentMonth, 'MMMM yyyy')}
                         </h3>
-                        <div className="flex gap-2">
+                        <div className="flex gap-1">
                             <button
                                 onClick={prevMonth}
                                 disabled={isBefore(subMonths(currentMonth, 1), startOfMonth(today))}
-                                className="p-1.5 rounded-full hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                                className="p-2 rounded-full hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
                             >
-                                <ChevronLeft size={20} className="text-gray-600" />
+                                <ChevronLeft size={18} className="text-gray-600" />
                             </button>
                             <button
                                 onClick={nextMonth}
-                                className="p-1.5 rounded-full hover:bg-gray-100 transition-colors"
+                                className="p-2 rounded-full hover:bg-gray-100 transition-colors"
                             >
-                                <ChevronRight size={20} className="text-gray-600" />
+                                <ChevronRight size={18} className="text-gray-600" />
                             </button>
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-7 gap-y-2 mb-2">
+                    <div className="grid grid-cols-7 mb-2">
                         {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => (
-                            <div key={index} className="text-center text-xs font-medium text-gray-400">
+                            <div key={index} className="text-center text-xs font-semibold text-gray-400 py-1.5">
                                 {day}
                             </div>
                         ))}
@@ -279,7 +304,7 @@ export function TimeSlotManagement() {
                             const isToday = isSameDay(day, today);
 
                             return (
-                                <div key={day.toString()} className="flex justify-center relative">
+                                <div key={day.toString()} className="flex justify-center py-1">
                                     <button
                                         onClick={() => {
                                             if (!isPast) {
@@ -289,11 +314,11 @@ export function TimeSlotManagement() {
                                         }}
                                         disabled={isPast}
                                         className={`
-                                            h-10 w-10 rounded-full flex items-center justify-center text-sm transition-all duration-200
-                                            ${isSelected && 'bg-brand-green text-white font-bold shadow-md ring-2 ring-brand-green ring-offset-2'}
-                                            ${!isSelected && isPast && 'text-gray-300 cursor-not-allowed'}
-                                            ${!isSelected && !isPast && 'hover:bg-brand-green/20 text-gray-700 border border-transparent hover:border-brand-green'}
-                                            ${!isSelected && isToday && 'border-2 border-brand-green text-brand-green font-semibold'}
+                                            h-9 w-9 rounded-full flex items-center justify-center text-sm transition-all duration-200
+                                            ${isSelected ? 'bg-brand-green text-white font-bold shadow-sm ring-2 ring-brand-green ring-offset-1' : ''}
+                                            ${!isSelected && isPast ? 'text-gray-300 cursor-not-allowed' : ''}
+                                            ${!isSelected && !isPast ? 'hover:bg-brand-green/15 text-gray-700' : ''}
+                                            ${!isSelected && isToday ? 'border-2 border-brand-green text-brand-green font-semibold' : ''}
                                         `}
                                     >
                                         {format(day, 'd')}
@@ -302,140 +327,159 @@ export function TimeSlotManagement() {
                             );
                         })}
                     </div>
+
+                    {/* Legend inside calendar card */}
+                    <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-2 gap-2">
+                        {[
+                            { color: 'bg-white border-2 border-gray-200', label: 'Available' },
+                            { color: 'bg-red-50 border-2 border-red-300', label: 'Blocked' },
+                            { color: 'bg-blue-50 border-2 border-blue-500 ring-2 ring-blue-300 ring-offset-1', label: 'Booked' },
+                            { color: 'bg-brand-orange border-2 border-brand-orange', label: 'Selected' },
+                        ].map(({ color, label }) => (
+                            <div key={label} className="flex items-center gap-2">
+                                <div className={`w-4 h-4 rounded shrink-0 ${color}`} />
+                                <span className="text-xs text-gray-600 font-medium">{label}</span>
+                            </div>
+                        ))}
+                    </div>
                 </div>
 
                 {/* Time Slots */}
-                <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-                    <div className="flex items-center justify-between mb-4">
+                <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex flex-col">
+                    {/* Time slots header */}
+                    <div className="flex items-center justify-between mb-3">
                         <h3 className="font-display font-semibold text-lg text-brand-green-dark flex items-center gap-2">
-                            <Clock size={18} /> Time Slots
+                            <Clock size={17} />
+                            <span>{format(selectedDate, 'MMM d, yyyy')}</span>
                         </h3>
-                        <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
-                            {format(selectedDate, 'MMM dd, yyyy')}
+                        {loading && (
+                            <div className="animate-spin rounded-full h-5 w-5 border-2 border-brand-green border-t-transparent" />
+                        )}
+                    </div>
+
+                    {/* Court selector */}
+                    <div className="flex items-center gap-3 mb-4">
+                        <label className="text-sm font-semibold text-gray-600 whitespace-nowrap">Court:</label>
+                        <select
+                            value={selectedCourt?.id || ''}
+                            onChange={(e) => {
+                                const court = courts.find(c => c.id === e.target.value);
+                                setSelectedCourt(court);
+                                setSelectedSlots([]);
+                            }}
+                            className="flex-1 px-3 py-2 text-sm font-medium border border-gray-300 rounded-xl focus:ring-2 focus:ring-brand-green focus:border-brand-green outline-none bg-white text-gray-700"
+                        >
+                            {courts.map(court => (
+                                <option key={court.id} value={court.id}>{court.name}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* Inline action bar */}
+                    <div className="flex items-center gap-2 mb-4 p-3 bg-gray-50 rounded-xl border border-gray-100">
+                        <span className="text-sm text-gray-500 mr-auto">
+                            {selectedSlots.length > 0
+                                ? <><strong className="text-brand-green-dark">{selectedSlots.length}</strong> slot{selectedSlots.length > 1 ? 's' : ''} selected</>
+                                : 'Click slots to select'
+                            }
                         </span>
-                    </div>
-
-                    {selectedSlots.length > 0 && (
-                        <div className="mb-4 flex gap-2">
-                            <Button
-                                size="sm"
-                                onClick={handleBlockSlots}
-                                disabled={loading}
-                                className="flex-1 bg-red-500 hover:bg-red-600 text-white"
-                            >
-                                <Lock size={16} className="mr-2" /> Block Selected ({selectedSlots.length})
-                            </Button>
-                            <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={handleUnblockSlots}
-                                disabled={loading}
-                                className="flex-1"
-                            >
-                                <Unlock size={16} className="mr-2" /> Unblock Selected ({selectedSlots.length})
-                            </Button>
-                            <Button
-                                size="sm"
-                                variant="ghost"
+                        <button
+                            onClick={handleBlockSlots}
+                            disabled={selectedUnblockedSlots.length === 0 || isBlocking || isUnblocking}
+                            className="flex items-center gap-1.5 px-4 py-1.5 text-sm font-semibold rounded-lg bg-red-500 text-white hover:bg-red-600 disabled:opacity-40 disabled:pointer-events-none transition-colors"
+                        >
+                            {isBlocking
+                                ? <><div className="h-3.5 w-3.5 rounded-full border-2 border-white border-t-transparent animate-spin" /> Blocking...</>
+                                : <><Lock size={13} /> Block ({selectedUnblockedSlots.length})</>
+                            }
+                        </button>
+                        <button
+                            onClick={handleUnblockSlots}
+                            disabled={selectedBlockedSlots.length === 0 || isBlocking || isUnblocking}
+                            className="flex items-center gap-1.5 px-4 py-1.5 text-sm font-semibold rounded-lg border-2 border-brand-green text-brand-green-dark hover:bg-brand-green-light disabled:opacity-40 disabled:pointer-events-none transition-colors"
+                        >
+                            {isUnblocking
+                                ? <><div className="h-3.5 w-3.5 rounded-full border-2 border-brand-green border-t-transparent animate-spin" /> Unblocking...</>
+                                : <><Unlock size={13} /> Unblock ({selectedBlockedSlots.length})</>
+                            }
+                        </button>
+                        {selectedSlots.length > 0 && (
+                            <button
                                 onClick={() => setSelectedSlots([])}
-                                className="text-gray-500"
+                                disabled={isBlocking || isUnblocking}
+                                className="p-1.5 rounded-lg hover:bg-gray-200 text-gray-400 hover:text-gray-600 disabled:opacity-40 disabled:pointer-events-none transition-colors"
                             >
-                                <X size={16} />
-                            </Button>
-                        </div>
-                    )}
+                                <X size={14} />
+                            </button>
+                        )}
+                    </div>
 
-                    {loading && (
-                        <div className="flex items-center justify-center py-8">
-                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-green"></div>
-                        </div>
-                    )}
+                    {/* Slots grid */}
+                    <div className="space-y-4 overflow-y-auto flex-1" style={{ maxHeight: '420px' }}>
+                        {TIME_SECTIONS.map((section, idx) => {
+                            const sectionSlots = timeSlots.filter(slot =>
+                                section.range.includes(parseInt(slot.id.split(':')[0]))
+                            );
 
-                    {!loading && (
-                        <div className="space-y-6 max-h-[500px] overflow-y-auto pr-2">
-                            {[
-                                { title: 'Early Morning (12AM - 5AM)', range: [0, 1, 2, 3, 4, 5] },
-                                { title: 'Morning (6AM - 11AM)', range: [6, 7, 8, 9, 10, 11] },
-                                { title: 'Afternoon (12PM - 5PM)', range: [12, 13, 14, 15, 16, 17] },
-                                { title: 'Evening (6PM - 11PM)', range: [18, 19, 20, 21, 22, 23] },
-                            ].map((section, idx) => {
-                                const sectionSlots = timeSlots.filter(slot => {
-                                    const hour = parseInt(slot.id.split(':')[0]);
-                                    return section.range.includes(hour);
-                                });
+                            if (sectionSlots.length === 0) return null;
 
-                                if (sectionSlots.length === 0) return null;
+                            return (
+                                <div key={idx}>
+                                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2 px-0.5">
+                                        {section.title}
+                                    </p>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {sectionSlots.map((slot) => {
+                                            const blocked = isSlotBlocked(slot.id);
+                                            const booked = isSlotBooked(slot.id);
+                                            const bookingInfo = getBookingInfo(slot.id);
+                                            const selected = selectedSlots.includes(slot.id);
+                                            const blockedCourtNames = blocked ? getBlockedCourtNames(slot.id) : [];
 
-                                return (
-                                    <div key={idx} className="space-y-3">
-                                        <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">
-                                            {section.title}
-                                        </h4>
-                                        <div className="grid grid-cols-2 gap-2">
-                                            {sectionSlots.map((slot) => {
-                                                const blocked = isSlotBlocked(slot.id);
-                                                const booked = isSlotBooked(slot.id);
-                                                const bookingInfo = getBookingInfo(slot.id);
-                                                const selected = selectedSlots.includes(slot.id);
-
-                                                return (
-                                                    <button
-                                                        key={slot.id}
-                                                        onClick={() => toggleSlot(slot.id, booked)}
-                                                        disabled={booked}
-                                                        className={`
-                                                            py-2 px-3 rounded-xl text-xs font-medium border transition-all duration-200 relative
-                                                            ${selected
-                                                                ? 'bg-brand-orange text-white border-brand-orange shadow-md scale-105'
-                                                                : booked
-                                                                    ? 'bg-blue-50 border-blue-300 text-blue-700 cursor-not-allowed'
-                                                                    : blocked
-                                                                        ? 'bg-red-50 border-red-300 text-red-700'
-                                                                        : 'bg-white border-gray-200 text-gray-600 hover:border-brand-green hover:text-brand-green'
-                                                            }
-                                                        `}
-                                                    >
-                                                        <div className="flex items-center justify-between gap-2">
-                                                            <span className="text-[10px]">{slot.label}</span>
-                                                            {blocked && <Lock size={12} />}
-                                                            {booked && <Users size={12} />}
+                                            return (
+                                                <button
+                                                    key={slot.id}
+                                                    onClick={() => toggleSlot(slot.id, booked)}
+                                                    disabled={booked}
+                                                    title={booked ? (bookingInfo?.customer_name || bookingInfo?.user_name || 'Booked') : blocked ? `Blocked${blockedCourtNames.length ? ': ' + blockedCourtNames.join(', ') : ''}` : slot.label}
+                                                    className={`
+                                                        py-2 px-3 rounded-xl text-xs font-medium border-2 transition-all duration-150 text-left leading-snug
+                                                        ${selected
+                                                            ? 'bg-brand-orange text-white border-brand-orange shadow-sm'
+                                                            : booked
+                                                                ? 'bg-blue-50 border-blue-500 text-blue-700 cursor-not-allowed ring-2 ring-blue-300 ring-offset-1 shadow-sm shadow-blue-100'
+                                                                : blocked
+                                                                    ? 'bg-red-50 border-red-200 text-red-600'
+                                                                    : 'bg-white border-gray-200 text-gray-600 hover:border-brand-green hover:text-brand-green hover:bg-brand-green/5'
+                                                        }
+                                                    `}
+                                                >
+                                                    <div className="flex items-center justify-between gap-1">
+                                                        <span className="truncate text-[11px] font-semibold">{slot.label}</span>
+                                                        {blocked && !selected && <Lock size={10} className="shrink-0 opacity-70" />}
+                                                        {booked && <Users size={10} className="shrink-0 opacity-70" />}
+                                                    </div>
+                                                    {booked && bookingInfo && (
+                                                        <div className="text-[10px] mt-0.5 truncate opacity-75">
+                                                            {bookingInfo.customer_name || bookingInfo.user_name || 'Booked'}
                                                         </div>
-                                                        {booked && bookingInfo && (
-                                                            <div className="text-[9px] mt-0.5 truncate text-left">
-                                                                {bookingInfo.customer_name || bookingInfo.user_name || 'Booked'}
-                                                            </div>
-                                                        )}
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
+                                                    )}
+                                                    {blocked && !selected && blockedCourtNames.length > 0 && (
+                                                        <div className="flex flex-wrap gap-0.5 mt-1">
+                                                            {blockedCourtNames.map(name => (
+                                                                <span key={name} className="inline-block bg-red-200 text-red-800 text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none">
+                                                                    {name}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </button>
+                                            );
+                                        })}
                                     </div>
-                                );
-                            })}
-                        </div>
-                    )}
-                </div>
-            </div>
-
-            {/* Legend */}
-            <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-                <h4 className="font-semibold text-sm text-gray-700 mb-3">Legend</h4>
-                <div className="flex flex-wrap gap-4 text-sm">
-                    <div className="flex items-center gap-2">
-                        <div className="w-4 h-4 rounded bg-white border-2 border-gray-200"></div>
-                        <span className="text-gray-600">Available</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <div className="w-4 h-4 rounded bg-red-50 border-2 border-red-300"></div>
-                        <span className="text-gray-600">Blocked by Admin</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <div className="w-4 h-4 rounded bg-blue-50 border-2 border-blue-300"></div>
-                        <span className="text-gray-600">Booked by Customer</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <div className="w-4 h-4 rounded bg-brand-orange border-2 border-brand-orange"></div>
-                        <span className="text-gray-600">Selected</span>
+                                </div>
+                            );
+                        })}
                     </div>
                 </div>
             </div>

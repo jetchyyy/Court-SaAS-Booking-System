@@ -130,6 +130,43 @@ export async function checkTimeSlotConflicts(courtId, bookingDate, bookedTimes, 
   try {
     const isExclusiveBooking = courtType?.includes('Exclusive') || courtType?.includes('Whole');
 
+    // --- Check admin-blocked slots first ---
+    {
+      let blockedQuery = supabase
+        .from('blocked_time_slots')
+        .select('time_slot, court_id')
+        .eq('blocked_date', bookingDate);
+
+      if (isExclusiveBooking) {
+        // Exclusive booking is blocked if ANY court has the slot blocked
+        // (fetch all, filter below)
+      } else {
+        blockedQuery = blockedQuery.eq('court_id', courtId);
+      }
+
+      const { data: blockedRows, error: blockedError } = await blockedQuery;
+
+      if (blockedError) {
+        console.error('Blocked slots check error:', blockedError);
+        throw new Error(`Failed to check blocked slots: ${blockedError.message}`);
+      }
+
+      if (blockedRows && blockedRows.length > 0) {
+        const blockedTimes = new Set(blockedRows.map(r => r.time_slot?.substring(0, 5)));
+        const adminBlockedConflicts = bookedTimes.filter(t =>
+          blockedTimes.has(t?.substring(0, 5))
+        );
+
+        if (adminBlockedConflicts.length > 0) {
+          return {
+            hasConflict: true,
+            conflicts: adminBlockedConflicts,
+            reason: 'admin_blocked',
+          };
+        }
+      }
+    }
+
     // Query ALL bookings for this date (not just one court)
     // This ensures we catch exclusive/whole court conflicts across courts
     const { data: existingBookings, error } = await supabase
