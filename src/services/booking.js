@@ -353,6 +353,20 @@ export async function createBooking({
         console.error('Race condition detected! Deleting duplicate booking:', bookingId);
         await supabase.from('bookings').delete().eq('id', bookingId);
 
+        // Also remove the orphaned proof of payment from storage (best-effort).
+        if (proofOfPaymentUrl) {
+          const marker = '/object/public/booking-proofs/';
+          const idx = proofOfPaymentUrl.indexOf(marker);
+          if (idx !== -1) {
+            const storagePath = decodeURIComponent(
+              proofOfPaymentUrl.substring(idx + marker.length).split('?')[0]
+            );
+            supabase.storage.from('booking-proofs').remove([storagePath]).catch((e) => {
+              console.warn('[createBooking] Could not remove orphaned proof from storage:', e);
+            });
+          }
+        }
+
         const conflictTimes = postInsertCheck.conflicts.join(', ');
         if (attempt < maxRetries) {
           lastError = new Error(`❌ Time slot conflict! Someone else just booked: ${conflictTimes}. Retrying...`);

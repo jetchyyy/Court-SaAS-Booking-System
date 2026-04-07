@@ -200,6 +200,22 @@ export function AdminBookings() {
                         throw new Error('Booking not found or delete permission denied. Check RLS policies.');
                     }
 
+                    // Best-effort: delete the proof of payment image from storage.
+                    // We do this after the DB delete succeeds so we never block the user action.
+                    const proofUrl = data[0]?.proof_of_payment_url;
+                    if (proofUrl) {
+                        const marker = '/object/public/booking-proofs/';
+                        const idx = proofUrl.indexOf(marker);
+                        if (idx !== -1) {
+                            const storagePath = decodeURIComponent(
+                                proofUrl.substring(idx + marker.length).split('?')[0]
+                            );
+                            await supabase.storage.from('booking-proofs').remove([storagePath]).catch((e) => {
+                                console.warn('[handleDeleteClick] Could not remove proof from storage:', e);
+                            });
+                        }
+                    }
+
                     await loadBookings({ force: true });
                 } catch (err) {
                     alert('Failed to delete booking: ' + err.message);

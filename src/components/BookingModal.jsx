@@ -12,6 +12,7 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
     const [paymentMethod, setPaymentMethod] = useState('gcash');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isCompressing, setIsCompressing] = useState(false);
+    const [originalFileSize, setOriginalFileSize] = useState(null);
     const [isDownloading, setIsDownloading] = useState(false);
     const [downloadError, setDownloadError] = useState(null);
     const [submitError, setSubmitError] = useState(null);
@@ -54,6 +55,7 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
             setTermsAccepted(false);
             setIsDownloading(false);
             setDownloadError(null);
+            setOriginalFileSize(null);
             // Fetch latest QR codes from CMS (cached, so very fast on repeat opens)
             getQrCodes().then(setQrCodes).catch(() => {});
         }
@@ -208,6 +210,7 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
             setTermsAccepted(false);
             setIsDownloading(false);
             setDownloadError(null);
+            setOriginalFileSize(null);
             onClose();
         }
     };
@@ -853,6 +856,9 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
 
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Upload Proof of Payment</label>
+                                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-2">
+                                        ⚠️ Upload your <strong>GCash or GoTyme payment screenshot</strong> showing the reference number and amount. Make sure the screenshot is clear and legible to avoid delays in processing your booking.
+                                    </p>
                                     <div className="relative">
                                         <input
                                             type="file"
@@ -864,14 +870,33 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
 
                                                 // Only compress image files
                                                 if (file.type.startsWith('image/')) {
+                                                    // Reject files over 10MB — too large even for compression
+                                                    if (file.size > 10 * 1024 * 1024) {
+                                                        setErrors({ ...errors, paymentProof: 'File is too large (max 10MB). Please screenshot your payment instead of uploading a photo.' });
+                                                        e.target.value = '';
+                                                        return;
+                                                    }
+
+                                                    setOriginalFileSize(file.size);
+
+                                                    // Skip compression if already ≤100KB
+                                                    if (file.size <= 100 * 1024) {
+                                                        console.log(`[Receipt] Already small (${(file.size / 1024).toFixed(0)} KB), skipping compression`);
+                                                        setFormData({ ...formData, paymentProof: file });
+                                                        setErrors({ ...errors, paymentProof: '' });
+                                                        return;
+                                                    }
+
                                                     setIsCompressing(true);
                                                     try {
                                                         const { default: imageCompression } = await import('browser-image-compression');
                                                         const options = {
-                                                            maxSizeMB: 0.4,          // Target ≤400KB
-                                                            maxWidthOrHeight: 1920,
+                                                            maxSizeMB: 0.1,          // Target ≤100KB
+                                                            maxWidthOrHeight: 800,   // 800px is plenty to read receipt text
                                                             useWebWorker: true,
-                                                            initialQuality: 0.8,
+                                                            initialQuality: 0.5,     // Start lower for faster convergence
+                                                            fileType: 'image/jpeg',  // Force JPEG for best compression ratio
+                                                            maxIteration: 20,        // More passes to reliably hit the target
                                                         };
                                                         console.log(`[Receipt] Original: ${file.name} (${(file.size / 1024).toFixed(0)} KB)`);
                                                         const compressed = await imageCompression(file, options);
@@ -910,8 +935,19 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
                                                     <Upload size={18} className={errors.paymentProof ? 'text-red-400' : 'text-gray-400'} />
                                                     <span className={`text-sm ${errors.paymentProof ? 'text-red-500' : 'text-gray-500'}`}>
                                                         {formData.paymentProof
-                                                            ? `${formData.paymentProof.name} (${(formData.paymentProof.size / 1024).toFixed(0)} KB)`
-                                                            : 'Click to upload screenshot'}
+                                                            ? (
+                                                                <span className="flex flex-col items-center gap-0.5">
+                                                                    <span className="font-medium text-gray-700 truncate max-w-[220px]">{formData.paymentProof.name}</span>
+                                                                    {originalFileSize && originalFileSize > formData.paymentProof.size ? (
+                                                                        <span className="text-xs text-green-700">
+                                                                            Compressed: {(originalFileSize / 1024).toFixed(0)} KB → <strong>{(formData.paymentProof.size / 1024).toFixed(0)} KB</strong>
+                                                                        </span>
+                                                                    ) : (
+                                                                        <span className="text-xs text-gray-400">{(formData.paymentProof.size / 1024).toFixed(0)} KB</span>
+                                                                    )}
+                                                                </span>
+                                                            )
+                                                            : 'Upload your GCash / GoTyme screenshot'}
                                                     </span>
                                                 </>
                                             )}
