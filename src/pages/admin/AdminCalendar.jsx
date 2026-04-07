@@ -3,8 +3,10 @@ import { Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Badge } from '../../components/ui';
-import { getAllBookings, subscribeToBookings, updateBookingStatus } from '../../services/booking';
+import { getAllBookings, subscribeToBookings, updateBookingStatus, rescheduleBooking, invalidateAllBookingsCache } from '../../services/booking';
 import { BookingDetailsModal } from '../../components/admin/BookingDetailsModal';
+import { RescheduleModal } from '../../components/admin/Reschedulemodal';
+import { AdminActionModal } from '../../components/admin/AdminActionModal';
 
 export function AdminCalendar() {
     const navigate = useNavigate();
@@ -14,6 +16,17 @@ export function AdminCalendar() {
     const [loading, setLoading] = useState(true);
     const [selectedBookingDetails, setSelectedBookingDetails] = useState(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isRescheduleModalOpen, setIsRescheduleModalOpen] = useState(false);
+    const [actionModal, setActionModal] = useState({
+        isOpen: false,
+        title: '',
+        description: '',
+        action: null,
+        variant: 'primary',
+        confirmLabel: 'Confirm',
+        successTitle: 'Success!',
+        successDescription: 'Action completed successfully.'
+    });
 
     useEffect(() => {
         loadBookings();
@@ -79,6 +92,63 @@ export function AdminCalendar() {
     const handleBookingClick = (booking) => {
         setSelectedBookingDetails(booking);
         setIsModalOpen(true);
+    };
+
+    const updateStatus = async (id, newStatus) => {
+        if (newStatus === 'Cancelled') {
+            setActionModal({
+                isOpen: true,
+                title: 'Cancel Booking',
+                description: 'Are you sure you want to cancel this booking? This action will notify the customer.',
+                variant: 'danger',
+                confirmLabel: 'Cancel Booking',
+                successTitle: 'Booking Cancelled',
+                successDescription: 'The booking has been successfully cancelled.',
+                action: async () => {
+                    await updateBookingStatus(id, newStatus);
+                    invalidateAllBookingsCache();
+                    await loadBookings();
+                }
+            });
+            return;
+        }
+        try {
+            await updateBookingStatus(id, newStatus);
+            invalidateAllBookingsCache();
+            await loadBookings();
+        } catch (err) {
+            console.error('Error updating booking status:', err);
+        }
+    };
+
+    const handleReschedule = (booking) => {
+        setSelectedBookingDetails(booking);
+        setIsModalOpen(false);
+        setIsRescheduleModalOpen(true);
+    };
+
+    const handleRescheduleConfirm = async (rescheduleData) => {
+        try {
+            const result = await rescheduleBooking(rescheduleData);
+            if (!result) throw new Error('Reschedule returned no data');
+            invalidateAllBookingsCache();
+            await loadBookings();
+            setActionModal({
+                isOpen: true,
+                title: 'Booking Rescheduled',
+                description: "The booking has been successfully rescheduled. Don't forget to send the SMS message to the customer!",
+                variant: 'success',
+                confirmLabel: 'OK',
+                successTitle: 'Success',
+                successDescription: 'Booking rescheduled.',
+                action: async () => {}
+            });
+            setIsRescheduleModalOpen(false);
+            setSelectedBookingDetails(null);
+        } catch (error) {
+            console.error('Reschedule failed:', error);
+            throw error;
+        }
     };
 
     return (
@@ -238,10 +308,30 @@ export function AdminCalendar() {
                 isOpen={isModalOpen}
                 onClose={() => setIsModalOpen(false)}
                 booking={selectedBookingDetails}
-                onUpdateStatus={async (id, status) => {
-                    await updateBookingStatus(id, status); // Need to import this
-                    loadBookings();
+                onUpdateStatus={updateStatus}
+                onReschedule={handleReschedule}
+            />
+
+            <RescheduleModal
+                isOpen={isRescheduleModalOpen}
+                onClose={() => {
+                    setIsRescheduleModalOpen(false);
+                    setSelectedBookingDetails(null);
                 }}
+                booking={selectedBookingDetails}
+                onConfirm={handleRescheduleConfirm}
+            />
+
+            <AdminActionModal
+                isOpen={actionModal.isOpen}
+                onClose={() => setActionModal(prev => ({ ...prev, isOpen: false }))}
+                title={actionModal.title}
+                description={actionModal.description}
+                action={actionModal.action}
+                variant={actionModal.variant}
+                confirmLabel={actionModal.confirmLabel}
+                successTitle={actionModal.successTitle}
+                successDescription={actionModal.successDescription}
             />
         </div>
     );
