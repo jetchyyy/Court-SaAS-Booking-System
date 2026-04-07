@@ -10,6 +10,20 @@ const imageBlobCache = new Map(); // url -> blobUrl
 export function BookingDetailsModal({ isOpen, onClose, booking, onUpdateStatus, onReschedule }) {
     const [cachedImageUrl, setCachedImageUrl] = useState(null);
     const [imageLoading, setImageLoading] = useState(false);
+    const [isDownloading, setIsDownloading] = useState(false);
+    const [downloadError, setDownloadError] = useState(null);
+    const [isCancelling, setIsCancelling] = useState(false);
+    const [isRescheduling, setIsRescheduling] = useState(false);
+
+    // Reset all button states when modal opens/closes
+    useEffect(() => {
+        if (isOpen) {
+            setIsDownloading(false);
+            setDownloadError(null);
+            setIsCancelling(false);
+            setIsRescheduling(false);
+        }
+    }, [isOpen, booking?.id]);
 
     // Pre-fetch and cache the proof-of-payment image as a blob URL
     useEffect(() => {
@@ -90,9 +104,12 @@ export function BookingDetailsModal({ isOpen, onClose, booking, onUpdateStatus, 
             return;
         }
 
+        setIsDownloading(true);
+        setDownloadError(null);
         try {
             // Fetch the image
             const response = await fetch(booking.proof_of_payment_url);
+            if (!response.ok) throw new Error(`Network error: ${response.status}`);
             const blob = await response.blob();
 
             // Create a temporary URL for the blob
@@ -114,7 +131,9 @@ export function BookingDetailsModal({ isOpen, onClose, booking, onUpdateStatus, 
             // Clean up the blob URL
             window.URL.revokeObjectURL(blobUrl);
         } catch (error) {
-            alert('Failed to download receipt. Please try again or view the image in a new tab.');
+            setDownloadError('Download failed. Please try again or view the image in a new tab.');
+        } finally {
+            setIsDownloading(false);
         }
     };
 
@@ -378,32 +397,50 @@ export function BookingDetailsModal({ isOpen, onClose, booking, onUpdateStatus, 
                 {/* Footer Actions */}
                 <div className="px-4 py-3 bg-gray-50 border-t border-gray-100 flex flex-wrap items-center justify-between gap-2 shrink-0">
                     <Button variant="ghost" onClick={onClose} className="text-sm px-3 py-1.5">Close</Button>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-col items-end gap-2">
+                        {downloadError && (
+                            <p className="text-xs text-red-600 flex items-center gap-1">
+                                <span>⚠</span> {downloadError}
+                            </p>
+                        )}
+                        <div className="flex flex-wrap gap-2">
                         {(booking.status === 'Confirmed' || booking.status === 'Rescheduled') && (
                             <>
                                 <Button
-                                    onClick={() => onReschedule(booking)}
-                                    className="bg-orange-50 text-brand-orange hover:bg-orange-100 border border-orange-200 flex items-center gap-1.5 text-sm px-3 py-1.5"
+                                    onClick={() => { setIsRescheduling(true); onReschedule(booking); }}
+                                    disabled={isRescheduling}
+                                    className="bg-orange-50 text-brand-orange hover:bg-orange-100 border border-orange-200 flex items-center gap-1.5 text-sm px-3 py-1.5 disabled:opacity-70 disabled:cursor-not-allowed"
                                 >
-                                    <RefreshCw size={14} />
+                                    {isRescheduling ? <Loader size={14} className="animate-spin" /> : <RefreshCw size={14} />}
                                     Reschedule
                                 </Button>
-                                <Button onClick={() => { onUpdateStatus(booking.id, 'Cancelled'); onClose(); }} className="bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 text-sm px-3 py-1.5">
+                                <Button onClick={async () => {
+                                    setIsCancelling(true);
+                                    await onUpdateStatus(booking.id, 'Cancelled');
+                                    setIsCancelling(false);
+                                    onClose();
+                                }} disabled={isCancelling} className="bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 text-sm px-3 py-1.5 flex items-center gap-1.5 disabled:opacity-70 disabled:cursor-not-allowed">
+                                    {isCancelling ? <Loader size={14} className="animate-spin" /> : null}
                                     Cancel
                                 </Button>
                                 <Button
                                     onClick={handleDownloadReceipt}
-                                    disabled={!booking.proof_of_payment_url}
+                                    disabled={!booking.proof_of_payment_url || isDownloading}
                                     className="bg-brand-green hover:bg-brand-green-dark text-white flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed text-sm px-3 py-1.5"
                                 >
-                                    <Download size={14} />
-                                    Download Receipt
+                                    {isDownloading ? (
+                                        <Loader size={14} className="animate-spin" />
+                                    ) : (
+                                        <Download size={14} />
+                                    )}
+                                    {isDownloading ? 'Downloading…' : 'Download Receipt'}
                                 </Button>
                             </>
                         )}
                         {booking.status === 'Cancelled' && (
                             <p className="text-sm text-gray-500 py-1">This booking has been cancelled</p>
                         )}
+                        </div>
                     </div>
                 </div>
             </div>

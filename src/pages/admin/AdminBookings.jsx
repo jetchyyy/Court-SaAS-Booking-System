@@ -1,11 +1,11 @@
 import { format } from 'date-fns';
-import { Calendar, CheckCircle, Clock, Eye, MoreVertical, Search, Trash2, XCircle } from 'lucide-react';
+import { Calendar, CheckCircle, Clock, Eye, MoreVertical, RefreshCw, Search, Trash2, XCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Badge, Button, Pagination } from '../../components/ui';
 import { BookingDetailsModal } from '../../components/admin/BookingDetailsModal';
 import { RescheduleModal } from '../../components/admin/Reschedulemodal';
 import { AdminActionModal } from '../../components/admin/AdminActionModal';
-import { getAllBookings, updateBookingStatus, subscribeToBookings, rescheduleBooking, invalidateAllBookingsCache } from '../../services/booking';
+import { getAllBookings, getSingleBooking, updateBookingStatus, subscribeToBookings, rescheduleBooking, invalidateAllBookingsCache } from '../../services/booking';
 import { supabase } from '../../lib/supabaseClient';
 
 export function AdminBookings() {
@@ -69,9 +69,18 @@ export function AdminBookings() {
     useEffect(() => {
         loadBookings();
 
-        // Subscribe to real-time booking updates — force-refresh to bypass cache
-        const subscription = subscribeToBookings((payload) => {
-            loadBookings({ force: true });
+        // Subscribe to real-time booking updates — update state incrementally to minimise egress
+        const subscription = subscribeToBookings(async (payload) => {
+            invalidateAllBookingsCache();
+            if (payload.eventType === 'DELETE') {
+                setBookings(prev => prev.filter(b => b.id !== payload.old.id));
+            } else if (payload.eventType === 'INSERT') {
+                const newBooking = await getSingleBooking(payload.new.id);
+                if (newBooking) setBookings(prev => [newBooking, ...prev]);
+            } else if (payload.eventType === 'UPDATE') {
+                const updatedBooking = await getSingleBooking(payload.new.id);
+                if (updatedBooking) setBookings(prev => prev.map(b => b.id === updatedBooking.id ? updatedBooking : b));
+            }
         });
 
         return () => {
@@ -161,7 +170,8 @@ export function AdminBookings() {
             setIsRescheduleModalOpen(false);
             setSelectedBooking(null);
         } catch (error) {
-            alert('Failed to reschedule booking: ' + error.message);
+            console.error('Reschedule failed:', error);
+            throw error; // Let RescheduleModal display the error inline
         }
     };
 
@@ -261,9 +271,20 @@ export function AdminBookings() {
         <div className="space-y-6 w-full max-w-full">
             {/* Row 1: Title + Search */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                    <h1 className="text-2xl font-bold font-display text-brand-green-dark">Booking Management</h1>
-                    <p className="text-gray-500">View and manage customer bookings</p>
+                <div className="flex items-center gap-3">
+                    <div>
+                        <h1 className="text-2xl font-bold font-display text-brand-green-dark">Booking Management</h1>
+                        <p className="text-gray-500">View and manage customer bookings</p>
+                    </div>
+                    <button
+                        onClick={() => loadBookings({ force: true })}
+                        disabled={loading}
+                        title="Refresh bookings"
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-brand-green-dark bg-brand-green/10 hover:bg-brand-green/20 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
+                        Refresh
+                    </button>
                 </div>
 
                 <div className="relative w-full sm:w-64">

@@ -437,6 +437,21 @@ export async function updateBookingStatus(bookingId, status) {
   return data?.[0];
 }
 
+// Fetch a single booking by id (with court join) — used for incremental real-time updates
+export async function getSingleBooking(id) {
+  const { data, error } = await supabase
+    .from('bookings')
+    .select('*, courts(name, type, price, pricing_rules)')
+    .eq('id', id)
+    .single();
+
+  if (error) {
+    console.error('getSingleBooking error:', error);
+    return null;
+  }
+  return data;
+}
+
 // Subscribe to bookings (real-time)
 export function subscribeToBookings(callback) {
   return supabase

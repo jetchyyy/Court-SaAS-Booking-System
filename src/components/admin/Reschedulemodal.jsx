@@ -1,5 +1,5 @@
 import { format } from 'date-fns';
-import { Calendar, Clock, Copy, CheckCircle, AlertCircle } from 'lucide-react';
+import { Calendar, Clock, Copy, CheckCircle, AlertCircle, Loader } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { Button } from '../ui';
 import { BookingCalendar } from '../BookingCalendar';
@@ -14,6 +14,8 @@ export function RescheduleModal({ isOpen, onClose, booking, onConfirm }) {
     const [courtBookings, setCourtBookings] = useState([]);
     const [copied, setCopied] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [isConfirming, setIsConfirming] = useState(false);
+    const [confirmError, setConfirmError] = useState(null);
 
     // Predefined reschedule reasons
     const rescheduleReasons = [
@@ -34,6 +36,8 @@ export function RescheduleModal({ isOpen, onClose, booking, onConfirm }) {
             setSelectedTimes([]);
             setCourtBookings([]);
             setCopied(false);
+            setIsConfirming(false);
+            setConfirmError(null);
         }
     }, [isOpen, booking]);
 
@@ -167,7 +171,7 @@ export function RescheduleModal({ isOpen, onClose, booking, onConfirm }) {
     };
 
     // Handle reschedule confirmation
-    const handleConfirm = () => {
+    const handleConfirm = async () => {
         if (!selectedDate || selectedTimes.length === 0) {
             alert('Please select a new date and time slots');
             return;
@@ -214,8 +218,16 @@ export function RescheduleModal({ isOpen, onClose, booking, onConfirm }) {
             originalBookedTimes: booking.booked_times
         };
 
-        onConfirm(rescheduleData);
-        onClose();
+        setIsConfirming(true);
+        setConfirmError(null);
+        try {
+            await onConfirm(rescheduleData);
+            // Parent (AdminBookings) closes the modal on success
+        } catch (err) {
+            setConfirmError(err.message || 'Failed to reschedule. Please try again.');
+        } finally {
+            setIsConfirming(false);
+        }
     };
 
     const bookedTimes = getBookedTimes();
@@ -506,15 +518,29 @@ export function RescheduleModal({ isOpen, onClose, booking, onConfirm }) {
                                 </div>
                             </div>
 
+                            {confirmError && (
+                                <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2.5 rounded-lg mt-2">
+                                    <AlertCircle size={15} className="mt-0.5 shrink-0" />
+                                    <span>{confirmError}</span>
+                                </div>
+                            )}
                             <div className="flex gap-3 pt-4">
-                                <Button variant="ghost" onClick={() => setStep(2)} className="flex-1">
+                                <Button variant="ghost" onClick={() => setStep(2)} className="flex-1" disabled={isConfirming}>
                                     Back
                                 </Button>
                                 <Button
                                     onClick={handleConfirm}
-                                    className="flex-1 bg-brand-orange hover:bg-brand-orange/90 text-white"
+                                    disabled={isConfirming}
+                                    className="flex-1 bg-brand-orange hover:bg-brand-orange/90 text-white flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
                                 >
-                                    Confirm Reschedule
+                                    {isConfirming ? (
+                                        <>
+                                            <Loader size={14} className="animate-spin" />
+                                            Rescheduling…
+                                        </>
+                                    ) : (
+                                        'Confirm Reschedule'
+                                    )}
                                 </Button>
                             </div>
                         </div>
