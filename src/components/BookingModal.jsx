@@ -408,16 +408,77 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
         document.body.removeChild(link);
     };
 
+    const isMobileDevice = () => /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const isIOS = () => /iPhone|iPad|iPod/i.test(navigator.userAgent);
+
     const handleDownloadImage = async () => {
         setIsDownloading(true);
         setDownloadError(null);
         try {
             const canvas = drawReceiptToCanvas(buildReceiptData());
-            triggerDownload(
-                canvas.toDataURL('image/png'),
-                `booking-receipt-${bookingResult?.id || Date.now()}.png`
-            );
+            const filename = `booking-receipt-${bookingResult?.id || Date.now()}.png`;
+
+            // Convert canvas to Blob
+            const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+
+            if (isMobileDevice()) {
+                // Tier 1: Web Share API — shows the native share sheet.
+                // On iOS the user picks "Save Image" → goes to Photos.
+                // On Android the user picks "Save to Photos" / gallery.
+                // Note: iOS Safari sometimes drops the gesture chain after an await,
+                // so we wrap in try/catch and fall through to the iOS-specific fallback.
+                if (navigator.canShare) {
+                    const file = new File([blob], filename, { type: 'image/png' });
+                    try {
+                        if (navigator.canShare({ files: [file] })) {
+                            await navigator.share({
+                                files: [file],
+                                title: 'Booking Receipt',
+                                text: 'Your Pickle Point Cebu booking receipt',
+                            });
+                            return;
+                        }
+                    } catch (shareErr) {
+                        if (shareErr.name === 'AbortError') return; // user dismissed — not an error
+                        // Share failed (gesture chain broken, etc.) — fall through below
+                    }
+                }
+
+                // Tier 2 (iOS only): open image in a new tab.
+                // The user can long-press the image → "Add to Photos" to save to their gallery.
+                if (isIOS()) {
+                    const dataUrl = canvas.toDataURL('image/png');
+                    const newTab = window.open('', '_blank');
+                    if (newTab) {
+                        newTab.document.write(
+                            `<!DOCTYPE html><html><head><title>Booking Receipt</title>
+                            <meta name="viewport" content="width=device-width,initial-scale=1">
+                            <style>
+                                body{margin:0;background:#f3f4f6;display:flex;flex-direction:column;align-items:center;padding:16px;font-family:sans-serif;}
+                                img{max-width:100%;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,.15);}
+                                .tip{background:#dcfce7;border:1px solid #bbf7d0;border-radius:10px;padding:12px 16px;margin-top:14px;font-size:13px;color:#166534;text-align:center;max-width:360px;}
+                            </style></head><body>
+                            <img src="${dataUrl}" alt="Booking Receipt" />
+                            <div class="tip">📸 Long-press the image, then tap <strong>"Add to Photos"</strong> to save it to your gallery.</div>
+                            </body></html>`
+                        );
+                        newTab.document.close();
+                        return;
+                    }
+                }
+
+                // Tier 3: Android without share support — direct blob download
+                const url = URL.createObjectURL(blob);
+                triggerDownload(url, filename);
+                setTimeout(() => URL.revokeObjectURL(url), 10000);
+            } else {
+                // Desktop: always a direct download — no share sheet
+                const url = URL.createObjectURL(blob);
+                triggerDownload(url, filename);
+                setTimeout(() => URL.revokeObjectURL(url), 10000);
+            }
         } catch (err) {
+            if (err.name === 'AbortError') return;
             console.error('Image download failed:', err);
             setDownloadError('Could not save image. Please try again.');
         } finally {
