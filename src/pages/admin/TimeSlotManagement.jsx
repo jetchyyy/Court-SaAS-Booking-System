@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '../../components/ui';
 import { supabase } from '../../lib/supabaseClient';
+import { appendAuditLog } from '../../services/auditLogs';
 
 export function TimeSlotManagement() {
     const today = startOfToday();
@@ -113,6 +114,24 @@ export function TimeSlotManagement() {
             } else {
                 queryClient.invalidateQueries(['blockedSlots', selectedCourt?.id, dateStr]);
             }
+
+            supabase.auth.getUser().then(({ data: authData }) => {
+                appendAuditLog({
+                    action: 'admin.timeslots.block',
+                    description: `Blocked ${selectedUnblockedSlots.length} slot(s) on ${dateStr}${isExclusiveCourt ? ' for all courts' : ` for ${selectedCourt?.name || 'selected court'}`}`,
+                    userId: authData?.user?.id || null,
+                    userEmail: authData?.user?.email || null,
+                    metadata: {
+                        date: dateStr,
+                        slots: selectedUnblockedSlots,
+                        courtId: selectedCourt?.id || null,
+                        applyAllCourts: !!isExclusiveCourt
+                    }
+                });
+            }).catch((err) => {
+                console.warn('Audit logging failed for block action:', err);
+            });
+
             setSelectedSlots([]);
         },
         onError: (err) => {
@@ -141,6 +160,24 @@ export function TimeSlotManagement() {
             } else {
                 queryClient.invalidateQueries(['blockedSlots', selectedCourt?.id, dateStr]);
             }
+
+            supabase.auth.getUser().then(({ data: authData }) => {
+                appendAuditLog({
+                    action: 'admin.timeslots.unblock',
+                    description: `Unblocked ${selectedBlockedSlots.length} slot(s) on ${dateStr}${isExclusiveCourt ? ' for all courts' : ` for ${selectedCourt?.name || 'selected court'}`}`,
+                    userId: authData?.user?.id || null,
+                    userEmail: authData?.user?.email || null,
+                    metadata: {
+                        date: dateStr,
+                        slots: selectedBlockedSlots,
+                        courtId: selectedCourt?.id || null,
+                        applyAllCourts: !!isExclusiveCourt
+                    }
+                });
+            }).catch((err) => {
+                console.warn('Audit logging failed for unblock action:', err);
+            });
+
             setSelectedSlots([]);
         },
         onError: (err) => {

@@ -412,26 +412,92 @@ export async function createBooking({
   throw lastError;
 }
 
-// Get all bookings (admin) — cached
-export async function getAllBookings({ force = false } = {}) {
+// Get all bookings (admin) — cached for full fetch, uncached for filtered fetches
+export async function getAllBookings({ force = false, createdAtFrom = null, createdAtTo = null } = {}) {
   const now = Date.now();
-  if (!force && allBookingsCache && now - allBookingsCache.timestamp < ALL_BOOKINGS_CACHE_TTL) {
+  const hasCreatedAtFilter = Boolean(createdAtFrom || createdAtTo);
+
+  if (!force && !hasCreatedAtFilter && allBookingsCache && now - allBookingsCache.timestamp < ALL_BOOKINGS_CACHE_TTL) {
     console.log('[getAllBookings] Returning cached data');
     return allBookingsCache.data;
   }
 
-  const { data, error } = await supabase
+  let query = supabase
     .from('bookings')
-    .select('*, courts(name, type, price, pricing_rules)')
-    .order('booking_date', { ascending: false });
+    .select('*, courts(name, type, price, pricing_rules)');
+
+  if (createdAtFrom) {
+    query = query.gte('created_at', createdAtFrom);
+  }
+
+  if (createdAtTo) {
+    query = query.lt('created_at', createdAtTo);
+  }
+
+  const { data, error } = await query.order('booking_date', { ascending: false });
 
   if (error) {
     console.error('Error fetching all bookings:', error);
     return [];
   }
 
-  allBookingsCache = { data, timestamp: now };
+  if (!hasCreatedAtFilter) {
+    allBookingsCache = { data, timestamp: now };
+  }
+
   return data;
+}
+
+// Get bookings by booking_date interval (admin calendar optimization)
+export async function getBookingsByDateRange({
+  fromDate,
+  toDate,
+  includeCancelled = false,
+}) {
+  let query = supabase
+    .from('bookings')
+    .select('*, courts(name, type, price, pricing_rules)')
+    .gte('booking_date', fromDate)
+    .lte('booking_date', toDate)
+    .order('booking_date', { ascending: true })
+    .order('start_time', { ascending: true });
+
+  if (!includeCancelled) {
+    query = query.neq('status', 'Cancelled');
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error('Error fetching bookings by date range:', error);
+    return [];
+  }
+
+  return data;
+}
+
+// Count bookings created within a created_at interval (lightweight egress)
+export async function getCreatedBookingsCount({ createdAtFrom, createdAtTo }) {
+  let query = supabase
+    .from('bookings')
+    .select('id', { count: 'exact', head: true });
+
+  if (createdAtFrom) {
+    query = query.gte('created_at', createdAtFrom);
+  }
+
+  if (createdAtTo) {
+    query = query.lt('created_at', createdAtTo);
+  }
+
+  const { count, error } = await query;
+
+  if (error) {
+    console.error('Error counting created bookings:', error);
+    return 0;
+  }
+
+  return count || 0;
 }
 
 // Update booking status (admin)

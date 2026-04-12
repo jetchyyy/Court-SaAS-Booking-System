@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabaseClient';
+import { appendAuditLog } from './auditLogs';
 
 // --- Simple in-memory cache for listCourts ---
 const CACHE_TTL_MS = 30_000; // 30 seconds
@@ -131,6 +132,18 @@ export async function createCourt({ name, type, price, description, imageFiles, 
     throw error;
   }
 
+  appendAuditLog({
+    action: 'admin.courts.create',
+    description: `Created court: ${name}`,
+    userId: user?.user?.id || null,
+    userEmail: user?.user?.email || null,
+    metadata: {
+      courtId: data?.[0]?.id || null,
+      type,
+      price
+    }
+  });
+
   invalidateCourtsCache();
   return data?.[0];
 }
@@ -196,6 +209,18 @@ export async function updateCourt(courtId, { name, type, price, description, ima
     throw error;
   }
 
+  const { data: authData } = await supabase.auth.getUser();
+  appendAuditLog({
+    action: 'admin.courts.update',
+    description: `Updated court: ${name || data?.[0]?.name || courtId}`,
+    userId: authData?.user?.id || null,
+    userEmail: authData?.user?.email || null,
+    metadata: {
+      courtId,
+      updatedFields: Object.keys(updateData)
+    }
+  });
+
   invalidateCourtsCache();
   console.log(`[updateCourt] DB update result:`, JSON.stringify(data));
   return data?.[0];
@@ -219,6 +244,18 @@ export async function toggleCourtStatus(courtId, isActive) {
     throw new Error('Failed to update court status');
   }
 
+  const { data: authData } = await supabase.auth.getUser();
+  appendAuditLog({
+    action: 'admin.courts.status',
+    description: `${isActive ? 'Enabled' : 'Disabled'} court: ${data?.[0]?.name || courtId}`,
+    userId: authData?.user?.id || null,
+    userEmail: authData?.user?.email || null,
+    metadata: {
+      courtId,
+      isActive
+    }
+  });
+
   invalidateCourtsCache();
   return data?.[0];
 }
@@ -237,12 +274,45 @@ export async function deleteCourt(courtId) {
     await supabase.storage.from('court-images').remove(paths);
   }
 
-  const { error } = await supabase
+  // Clean up admin-blocked slots that belong to this court (best effort).
+  await supabase
+    .from('blocked_time_slots')
+    .delete()
+    .eq('court_id', courtId)
+    .throwOnError()
+    .catch((err) => {
+      console.warn('[deleteCourt] Could not remove blocked time slots:', err);
+    });
+
+  const { data, error } = await supabase
     .from('courts')
     .delete()
-    .eq('id', courtId);
+    .eq('id', courtId)
+    .select();
 
-  if (error) throw error;
+  if (error) {
+    // FK violations commonly mean there are existing bookings linked to this court.
+    if (error.code === '23503') {
+      throw new Error('Cannot delete this court because it has related records (for example existing bookings). Remove or reassign related records first.');
+    }
+    throw error;
+  }
+
+  if (!data || data.length === 0) {
+    throw new Error('Court not found or delete permission denied. Check RLS policies.');
+  }
+
+  const { data: authData } = await supabase.auth.getUser();
+  appendAuditLog({
+    action: 'admin.courts.delete',
+    description: `Deleted court: ${data?.[0]?.name || courtId}`,
+    userId: authData?.user?.id || null,
+    userEmail: authData?.user?.email || null,
+    metadata: {
+      courtId
+    }
+  });
+
   invalidateCourtsCache();
 }
 

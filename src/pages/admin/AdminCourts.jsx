@@ -1,9 +1,10 @@
-import { Plus, Trash2, Edit2, Power, AlertCircle, X } from 'lucide-react';
+import { Plus, Trash2, Edit2, Power, AlertCircle, X, Pin, GripVertical } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button, Card } from '../../components/ui';
 import { AdminActionModal } from '../../components/admin/AdminActionModal';
-import { createCourt, deleteCourt, listCourts, subscribeToCourts, updateCourt, toggleCourtStatus } from '../../services/courts';
+import { createCourt, listCourts, subscribeToCourts, updateCourt, toggleCourtStatus } from '../../services/courts';
+import { orderCourtsForHomepage, setCourtAsFirst, setHomepageCourtOrder } from '../../lib/courtDisplayOrder';
 
 export function AdminCourts() {
     const queryClient = useQueryClient();
@@ -34,6 +35,11 @@ export function AdminCourts() {
         successTitle: 'Success!',
         successDescription: 'Action completed successfully.'
     });
+    const [draggedCourtId, setDraggedCourtId] = useState(null);
+    const [dragOverCourtId, setDragOverCourtId] = useState(null);
+    const [isTouchDragging, setIsTouchDragging] = useState(false);
+
+    const orderedCourts = orderCourtsForHomepage(courts);
 
     useEffect(() => {
         loadCourts();
@@ -187,21 +193,126 @@ export function AdminCourts() {
         });
     };
 
-    const handleDelete = (court) => {
+    const handleArchive = (court) => {
         setActionModal({
             isOpen: true,
-            title: 'Delete Court',
-            description: `Are you sure you want to remove ${court.name}? This cannot be undone.`,
-            variant: 'danger',
-            confirmLabel: 'Remove Court',
-            successTitle: 'Court Removed',
-            successDescription: 'The court has been successfully removed.',
+            title: 'Archive Court',
+            description: `Archive ${court.name} from the homepage? Booking records stay intact.`,
+            variant: 'warning',
+            confirmLabel: 'Archive Court',
+            successTitle: 'Court Archived',
+            successDescription: 'The court was hidden from the homepage while keeping all records.',
             action: async () => {
-                await deleteCourt(court.id);
+                await toggleCourtStatus(court.id, false);
                 await loadCourts({ force: true });
                 queryClient.invalidateQueries(['courts']);
             }
         });
+    };
+
+    const handleSetFirst = async (court) => {
+        setCourtAsFirst(court.id, courts);
+        setCourts(prev => [...prev]);
+    };
+
+    const handleDragStart = (courtId) => {
+        setDraggedCourtId(String(courtId));
+    };
+
+    const handleDragOver = (event, courtId) => {
+        event.preventDefault();
+        const targetId = String(courtId);
+        if (draggedCourtId && draggedCourtId !== targetId) {
+            setDragOverCourtId(targetId);
+        }
+    };
+
+    const handleDrop = (targetCourtId) => {
+        const draggedId = String(draggedCourtId || '');
+        const targetId = String(targetCourtId);
+
+        if (!draggedId || !targetId || draggedId === targetId) {
+            setDraggedCourtId(null);
+            setDragOverCourtId(null);
+            return;
+        }
+
+        const ids = orderedCourts.map(c => String(c.id));
+        const fromIndex = ids.indexOf(draggedId);
+        const toIndex = ids.indexOf(targetId);
+
+        if (fromIndex === -1 || toIndex === -1) {
+            setDraggedCourtId(null);
+            setDragOverCourtId(null);
+            return;
+        }
+
+        const [moved] = ids.splice(fromIndex, 1);
+        ids.splice(toIndex, 0, moved);
+
+        setHomepageCourtOrder(ids);
+        setCourts(prev => [...prev]);
+        setDraggedCourtId(null);
+        setDragOverCourtId(null);
+    };
+
+    const handleDragEnd = () => {
+        setDraggedCourtId(null);
+        setDragOverCourtId(null);
+    };
+
+    const handleTouchStart = (courtId) => {
+        setDraggedCourtId(String(courtId));
+        setDragOverCourtId(String(courtId));
+        setIsTouchDragging(true);
+    };
+
+    const handleTouchMove = (event) => {
+        if (!isTouchDragging || !draggedCourtId) return;
+        const touch = event.touches?.[0];
+        if (!touch) return;
+
+        const target = document.elementFromPoint(touch.clientX, touch.clientY);
+        const card = target?.closest?.('[data-court-id]');
+        const targetId = card?.getAttribute?.('data-court-id');
+
+        if (targetId && targetId !== draggedCourtId) {
+            setDragOverCourtId(targetId);
+        }
+    };
+
+    const handleTouchEnd = () => {
+        if (!isTouchDragging) return;
+
+        const draggedId = String(draggedCourtId || '');
+        const targetId = String(dragOverCourtId || '');
+
+        if (!draggedId || !targetId || draggedId === targetId) {
+            setDraggedCourtId(null);
+            setDragOverCourtId(null);
+            setIsTouchDragging(false);
+            return;
+        }
+
+        const ids = orderedCourts.map(c => String(c.id));
+        const fromIndex = ids.indexOf(draggedId);
+        const toIndex = ids.indexOf(targetId);
+
+        if (fromIndex === -1 || toIndex === -1) {
+            setDraggedCourtId(null);
+            setDragOverCourtId(null);
+            setIsTouchDragging(false);
+            return;
+        }
+
+        const [moved] = ids.splice(fromIndex, 1);
+        ids.splice(toIndex, 0, moved);
+
+        setHomepageCourtOrder(ids);
+        setCourts(prev => [...prev]);
+        setDraggedCourtId(null);
+        setDragOverCourtId(null);
+        setIsTouchDragging(false);
     };
 
     const resetForm = () => {
@@ -226,7 +337,8 @@ export function AdminCourts() {
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl font-bold font-display text-brand-green-dark">Court Management</h1>
-                    <p className="text-gray-500">Add, edit, or remove playing courts</p>
+                    <p className="text-gray-500">Add, edit, archive, and control homepage order of courts</p>
+                    <p className="text-xs text-gray-400 mt-1">Desktop: drag cards. Mobile/tablet: touch and drag cards. Pin sets first.</p>
                 </div>
                 <Button onClick={() => setIsFormOpen(true)} disabled={loading} className="text-white">
                     <Plus size={18} className="mr-2" /> Add Court
@@ -442,11 +554,28 @@ export function AdminCourts() {
                 </div>
             ) : (
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {courts.map((court) => {
+                    {orderedCourts.map((court, index) => {
                         const isActive = court.is_active !== false; // Default to active if not specified
+                        const isDragOver = dragOverCourtId === String(court.id) && draggedCourtId !== String(court.id);
                         return (
-                            <Card key={court.id} className={`overflow-hidden group ${!isActive ? 'opacity-60' : ''}`}>
+                            <Card
+                                key={court.id}
+                                data-court-id={String(court.id)}
+                                draggable={!loading}
+                                onDragStart={() => handleDragStart(court.id)}
+                                onDragOver={(event) => handleDragOver(event, court.id)}
+                                onDrop={() => handleDrop(court.id)}
+                                onDragEnd={handleDragEnd}
+                                onTouchStart={() => handleTouchStart(court.id)}
+                                onTouchMove={handleTouchMove}
+                                onTouchEnd={handleTouchEnd}
+                                onTouchCancel={handleTouchEnd}
+                                className={`overflow-hidden group cursor-move ${!isActive ? 'opacity-60' : ''} ${isDragOver ? 'ring-2 ring-brand-green' : ''} ${isTouchDragging ? 'touch-none' : ''}`}
+                            >
                                 <div className="aspect-video relative overflow-hidden bg-gray-100">
+                                    <div className="absolute top-2 left-2 z-10 flex items-center gap-1 px-2 py-1 rounded-full bg-white/85 text-gray-600 text-xs font-medium shadow-sm">
+                                        <GripVertical size={14} /> Drag
+                                    </div>
                                     <img
                                         src={(court.images && court.images[0]?.url) || '/images/court1.jpg'}
                                         alt={court.name}
@@ -461,6 +590,14 @@ export function AdminCourts() {
                                         </div>
                                     )}
                                     <div className="absolute top-2 right-2 flex gap-1">
+                                        <button
+                                            onClick={() => handleSetFirst(court)}
+                                            disabled={loading || index === 0}
+                                            className="p-2 bg-white/90 hover:bg-amber-50 text-amber-600 rounded-full shadow-sm backdrop-blur-sm transition-colors disabled:opacity-40"
+                                            title="Set as first on homepage"
+                                        >
+                                            <Pin size={16} />
+                                        </button>
                                         <button
                                             onClick={() => handleEditCourt(court)}
                                             disabled={loading}
@@ -481,10 +618,10 @@ export function AdminCourts() {
                                             <Power size={16} />
                                         </button>
                                         <button
-                                            onClick={() => handleDelete(court)}
+                                            onClick={() => handleArchive(court)}
                                             disabled={loading}
                                             className="p-2 bg-white/90 hover:bg-red-50 text-red-500 rounded-full shadow-sm backdrop-blur-sm transition-colors disabled:opacity-50"
-                                            title="Delete court"
+                                            title="Archive court"
                                         >
                                             <Trash2 size={16} />
                                         </button>
@@ -499,8 +636,9 @@ export function AdminCourts() {
                                         <span className="font-bold text-brand-orange">₱{court.price}</span>
                                     </div>
                                     <p className="text-sm text-gray-600 line-clamp-2">{court.description}</p>
+                                    <p className="text-xs text-gray-400 mt-2">Homepage position: #{index + 1}</p>
                                     {court.images && court.images.length > 0 && (
-                                        <p className="text-xs text-gray-400 mt-2">{court.images.length} image(s)</p>
+                                        <p className="text-xs text-gray-400 mt-1">{court.images.length} image(s)</p>
                                     )}
                                     <p className="text-xs text-gray-500 mt-1">Max {court.max_players || 10} players</p>
                                 </div>

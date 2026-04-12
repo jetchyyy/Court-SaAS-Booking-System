@@ -1,7 +1,8 @@
 import { Lock, Eye, EyeOff, CheckCircle } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '../../components/ui';
 import { changePassword } from '../../services/auth';
+import { appendAuditLog, setDeveloperModeEnabled } from '../../services/auditLogs';
 
 // Move PasswordInput component outside to prevent remounting
 const PasswordInput = ({
@@ -52,6 +53,36 @@ export function ChangePassword() {
     const [showCurrentPassword, setShowCurrentPassword] = useState(false);
     const [showNewPassword, setShowNewPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+    const [devMessage, setDevMessage] = useState('');
+    const keyBufferRef = useRef('');
+
+    useEffect(() => {
+        const handleKeydown = (event) => {
+            const key = String(event.key || '').toUpperCase();
+            if (!/^[A-Z]$/.test(key)) return;
+
+            keyBufferRef.current = `${keyBufferRef.current}${key}`.slice(-3);
+            if (keyBufferRef.current === 'ODC') {
+                keyBufferRef.current = '';
+                setDeveloperModeEnabled(true);
+                window.dispatchEvent(new CustomEvent('developer-mode-activate'));
+                appendAuditLog({
+                    action: 'admin.devmode.enabled',
+                    description: 'Developer mode activated via ODC easter egg from Change Password page'
+                });
+
+                setDevMessage('Developer mode activated: audit tray unlocked.');
+                window.setTimeout(() => {
+                    setDevMessage('');
+                }, 3000);
+            }
+        };
+
+        window.addEventListener('keydown', handleKeydown);
+        return () => {
+            window.removeEventListener('keydown', handleKeydown);
+        };
+    }, []);
 
     const validatePassword = (password) => {
         if (password.length < 8) {
@@ -108,7 +139,7 @@ export function ChangePassword() {
     };
 
     return (
-        <div className="max-w-2xl w-full max-w-full">
+        <div className="max-w-2xl w-full">
             <div className="mb-8">
                 <h1 className="text-2xl font-display font-bold text-brand-green-dark mb-2">
                     Change Password
@@ -168,6 +199,12 @@ export function ChangePassword() {
                         <div className="p-4 bg-green-50 border border-green-200 rounded-xl text-sm text-green-700 flex items-center gap-2">
                             <CheckCircle size={20} />
                             <span>Password changed successfully!</span>
+                        </div>
+                    )}
+
+                    {devMessage && (
+                        <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-sm text-emerald-700">
+                            {devMessage}
                         </div>
                     )}
 

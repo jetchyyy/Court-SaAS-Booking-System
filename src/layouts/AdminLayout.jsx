@@ -4,6 +4,8 @@ import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '../components/ui';
 import { getCurrentUser, signOut } from '../services/auth';
 import { AdminActionModal } from '../components/admin/AdminActionModal';
+import { DeveloperAuditPanel } from '../components/admin/DeveloperAuditPanel';
+import { appendAuditLog } from '../services/auditLogs';
 
 export function AdminLayout() {
     const navigate = useNavigate();
@@ -60,6 +62,12 @@ export function AdminLayout() {
             successTitle: 'Signed Out',
             successDescription: 'You have been successfully logged out.',
             action: async () => {
+                appendAuditLog({
+                    action: 'admin.auth.logout',
+                    description: 'Admin logged out from admin panel',
+                    userId: user?.id || null,
+                    userEmail: user?.email || null
+                });
                 await signOut();
             },
             onSuccess: () => navigate('/admin')
@@ -213,6 +221,8 @@ export function AdminLayout() {
                 successDescription={actionModal.successDescription}
                 onSuccess={actionModal.onSuccess}
             />
+
+            <DeveloperAuditPanel />
         </div>
     );
 }

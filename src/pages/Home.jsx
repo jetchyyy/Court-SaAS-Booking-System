@@ -1,5 +1,5 @@
 import { startOfToday, format } from 'date-fns';
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { BookingCalendar } from '../components/BookingCalendar';
 import { BookingModal } from '../components/BookingModal';
 import { Button } from '../components/ui';
@@ -12,6 +12,9 @@ import { Hero } from '../components/Hero';
 import { Navbar } from '../components/Navbar';
 import { listCourts, subscribeToCourts } from '../services/courts';
 import { getCourtBookings, subscribeToBookings } from '../services/booking';
+import { orderCourtsForHomepage } from '../lib/courtDisplayOrder';
+
+const ACTIVE_BOOKING_STATUSES = new Set(['Confirmed', 'Rescheduled']);
 
 // --- Simple in-memory caches for booking data ---
 const BOOKING_CACHE_TTL = 30_000; // 30 seconds
@@ -45,6 +48,14 @@ export function Home() {
     const [blockedSlots, setBlockedSlots] = useState([]);
     const [validationError, setValidationError] = useState('');
     const [loading, setLoading] = useState(false);
+
+    const visibleCourts = orderCourtsForHomepage(
+        (activeCourts || []).filter((court) => court.is_active !== false)
+    );
+
+    const isExclusiveCourtType = (courtType = '') => {
+        return courtType.includes('Exclusive') || courtType.includes('Whole');
+    };
 
     // Load courts from Supabase (uses listCourts cache from courts.js)
     useEffect(() => {
@@ -86,9 +97,46 @@ export function Home() {
             loadMonthlyBookings();
 
             const subscription = subscribeToBookings((payload) => {
-                // Force-refresh on real-time booking events
-                loadBookings({ force: true });
-                loadMonthlyBookings({ force: true });
+                const eventType = payload?.eventType;
+                const records = [payload?.new, payload?.old].filter(Boolean);
+                if (records.length === 0) return;
+
+                const selectedDateStr = format(selectedDate, 'yyyy-MM-dd');
+                const selectedMonth = selectedDate.getMonth();
+                const selectedYear = selectedDate.getFullYear();
+                const selectedIsExclusive = isExclusiveCourtType(selectedCourt?.type || '');
+                const exclusiveCourtIds = new Set(
+                    (activeCourts || [])
+                        .filter(c => isExclusiveCourtType(c?.type || ''))
+                        .map(c => c.id)
+                );
+
+                const touchesSelectedCourtContext = records.some((record) => {
+                    if (selectedIsExclusive) return true;
+                    return record.court_id === selectedCourt.id || exclusiveCourtIds.has(record.court_id);
+                });
+
+                if (!touchesSelectedCourtContext) return;
+
+                const touchesSelectedDay = records.some((record) => {
+                    if (!record?.booking_date) return false;
+                    if (eventType === 'DELETE') return record.booking_date === selectedDateStr;
+                    return record.booking_date === selectedDateStr;
+                });
+
+                const touchesSelectedMonth = records.some((record) => {
+                    if (!record?.booking_date) return false;
+                    const [y, m] = record.booking_date.split('-').map(Number);
+                    if (!y || !m) return false;
+                    return y === selectedYear && m - 1 === selectedMonth;
+                });
+
+                if (touchesSelectedDay) {
+                    loadBookings({ force: true });
+                }
+                if (touchesSelectedMonth) {
+                    loadMonthlyBookings({ force: true });
+                }
             });
 
             // Listen for booking conflict events from the modal
@@ -109,7 +157,7 @@ export function Home() {
                 window.removeEventListener('bookingConflict', handleBookingConflict);
             };
         }
-    }, [selectedCourt, selectedDate]);
+    }, [selectedCourt, selectedDate, activeCourts]);
 
     const loadBookings = async ({ force = false } = {}) => {
         if (!selectedCourt) return;
@@ -214,7 +262,7 @@ export function Home() {
             const { supabase } = await import('../lib/supabaseClient');
             const { data, error } = await supabase
                 .from('bookings')
-                .select('*, courts(id, name, type)')
+                .select('id, court_id, booking_date, start_time, end_time, booked_times, status, courts(id, type)')
                 .gte('booking_date', format(startOfMonth, 'yyyy-MM-dd'))
                 .lte('booking_date', format(endOfMonth, 'yyyy-MM-dd'))
                 .in('status', ['Confirmed', 'Rescheduled']);
@@ -471,7 +519,7 @@ export function Home() {
                     </div>
 
                     <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-                        {activeCourts.map((court) => (
+                        {visibleCourts.map((court) => (
                             <CourtCard key={court.id} court={court} onBook={handleBookClick} />
                         ))}
                     </div>

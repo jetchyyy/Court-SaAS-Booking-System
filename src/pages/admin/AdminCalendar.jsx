@@ -1,9 +1,9 @@
-import { eachDayOfInterval, endOfMonth, endOfWeek, format, isSameDay, isSameMonth, parseISO, startOfMonth, startOfWeek } from 'date-fns';
+import { eachDayOfInterval, endOfMonth, endOfWeek, format, isSameDay, isSameMonth, startOfMonth, startOfWeek } from 'date-fns';
 import { Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Badge } from '../../components/ui';
-import { getAllBookings, subscribeToBookings, updateBookingStatus, rescheduleBooking, invalidateAllBookingsCache } from '../../services/booking';
+import { getBookingsByDateRange, getCreatedBookingsCount, subscribeToBookings, updateBookingStatus, rescheduleBooking, invalidateAllBookingsCache } from '../../services/booking';
 import { BookingDetailsModal } from '../../components/admin/BookingDetailsModal';
 import { RescheduleModal } from '../../components/admin/Reschedulemodal';
 import { AdminActionModal } from '../../components/admin/AdminActionModal';
@@ -14,6 +14,7 @@ export function AdminCalendar() {
     const [bookings, setBookings] = useState([]);
     const [selectedDate, setSelectedDate] = useState(new Date());
     const [loading, setLoading] = useState(true);
+    const [todayCount, setTodayCount] = useState(0);
     const [selectedBookingDetails, setSelectedBookingDetails] = useState(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isRescheduleModalOpen, setIsRescheduleModalOpen] = useState(false);
@@ -28,12 +29,74 @@ export function AdminCalendar() {
         successDescription: 'Action completed successfully.'
     });
 
+    const getManilaDayUtcRange = (date = new Date()) => {
+        const manilaDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(date);
+        const startUtcDate = new Date(`${manilaDate}T00:00:00+08:00`);
+        const endUtcDate = new Date(startUtcDate.getTime() + 86400000);
+        return {
+            startUtc: startUtcDate.toISOString(),
+            endUtc: endUtcDate.toISOString(),
+        };
+    };
+
+    const getManilaDateStr = (date = new Date()) =>
+        new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(date);
+
+    const getMonthQueryDateRange = (monthDate) => {
+        const monthStart = startOfMonth(monthDate);
+        const monthEnd = endOfMonth(monthStart);
+
+        const today = new Date();
+        const isCurrentMonth =
+            monthDate.getFullYear() === today.getFullYear() &&
+            monthDate.getMonth() === today.getMonth();
+
+        const monthStartStr = format(monthStart, 'yyyy-MM-dd');
+        const monthEndStr = format(monthEnd, 'yyyy-MM-dd');
+        const fromDate = isCurrentMonth ? getManilaDateStr(today) : monthStartStr;
+
+        return {
+            fromDate,
+            toDate: monthEndStr,
+        };
+    };
+
+    const loadBookings = async (monthDate = currentMonth) => {
+        try {
+            setLoading(true);
+            const { fromDate, toDate } = getMonthQueryDateRange(monthDate);
+            const data = await getBookingsByDateRange({ fromDate, toDate, includeCancelled: false });
+            setBookings(data || []);
+        } catch (err) {
+            console.error('Error loading bookings:', err);
+            setBookings([]);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const loadTodayCount = async () => {
+        try {
+            const { startUtc, endUtc } = getManilaDayUtcRange();
+            const count = await getCreatedBookingsCount({ createdAtFrom: startUtc, createdAtTo: endUtc });
+            setTodayCount(count || 0);
+        } catch (err) {
+            console.error('Error loading today count:', err);
+            setTodayCount(0);
+        }
+    };
+
     useEffect(() => {
-        loadBookings();
+        loadBookings(currentMonth);
+    }, [currentMonth]);
+
+    useEffect(() => {
+        loadTodayCount();
 
         // Subscribe to real-time updates
         const subscription = subscribeToBookings(() => {
-            loadBookings();
+            loadBookings(currentMonth);
+            loadTodayCount();
         });
 
         return () => {
@@ -41,19 +104,7 @@ export function AdminCalendar() {
                 subscription.unsubscribe();
             }
         };
-    }, []);
-
-    const loadBookings = async () => {
-        try {
-            setLoading(true);
-            const data = await getAllBookings();
-            setBookings(data || []);
-        } catch (err) {
-            console.error('Error loading bookings:', err);
-        } finally {
-            setLoading(false);
-        }
-    };
+    }, [currentMonth]);
 
     const firstDayNextMonth = () => {
         setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
@@ -70,16 +121,6 @@ export function AdminCalendar() {
 
     const calendarDays = eachDayOfInterval({ start: startDate, end: endDate });
 
-    const toUTC = (isoStr) => {
-        if (!isoStr) return new Date(NaN);
-        const s = isoStr.trim();
-        if (s.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(s)) return new Date(s);
-        return new Date(s + 'Z');
-    };
-    const getManilaDateStr = (date) =>
-        new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(date);
-    const todayStr = getManilaDateStr(new Date());
-    const todayCount = bookings.filter(b => b.created_at && getManilaDateStr(toUTC(b.created_at)) === todayStr).length;
     const todayLabel = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', month: 'long', day: 'numeric', year: 'numeric' }).format(new Date());
 
     const getBookingsForDate = (date) => {
@@ -107,7 +148,8 @@ export function AdminCalendar() {
                 action: async () => {
                     await updateBookingStatus(id, newStatus);
                     invalidateAllBookingsCache();
-                    await loadBookings();
+                    await loadBookings(currentMonth);
+                    await loadTodayCount();
                 }
             });
             return;
@@ -115,7 +157,8 @@ export function AdminCalendar() {
         try {
             await updateBookingStatus(id, newStatus);
             invalidateAllBookingsCache();
-            await loadBookings();
+            await loadBookings(currentMonth);
+            await loadTodayCount();
         } catch (err) {
             console.error('Error updating booking status:', err);
         }
@@ -132,7 +175,8 @@ export function AdminCalendar() {
             const result = await rescheduleBooking(rescheduleData);
             if (!result) throw new Error('Reschedule returned no data');
             invalidateAllBookingsCache();
-            await loadBookings();
+            await loadBookings(currentMonth);
+            await loadTodayCount();
             setActionModal({
                 isOpen: true,
                 title: 'Booking Rescheduled',

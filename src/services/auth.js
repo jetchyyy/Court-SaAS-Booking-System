@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabaseClient';
+import { appendAuditLog } from './auditLogs';
 
 // --- Simple in-memory cache for getCurrentUser ---
 const USER_CACHE_TTL_MS = 60_000; // 60 seconds
@@ -23,6 +24,13 @@ export async function signUp(email, password) {
       id: data.user.id,
       email: data.user.email
     }]);
+
+    appendAuditLog({
+      action: 'admin.auth.signup',
+      description: 'Admin account signed up',
+      userId: data.user.id,
+      userEmail: data.user.email
+    });
   }
 
   invalidateUserCache();
@@ -37,6 +45,13 @@ export async function signIn(email, password) {
   });
 
   if (error) throw error;
+
+  appendAuditLog({
+    action: 'admin.auth.login',
+    description: 'Admin logged in',
+    userId: data?.user?.id || null,
+    userEmail: data?.user?.email || email || null
+  });
 
   invalidateUserCache();
   return data;
@@ -115,6 +130,13 @@ export async function changePassword(currentPassword, newPassword) {
     if (error) {
       throw error;
     }
+
+    appendAuditLog({
+      action: 'admin.auth.change_password',
+      description: 'Admin changed password',
+      userId: user.id,
+      userEmail: user.email
+    });
 
     return data;
   } catch (error) {

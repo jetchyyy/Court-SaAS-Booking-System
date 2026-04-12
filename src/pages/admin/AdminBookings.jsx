@@ -18,6 +18,7 @@ export function AdminBookings() {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isRescheduleModalOpen, setIsRescheduleModalOpen] = useState(false);
     const [loading, setLoading] = useState(true);
+    const [hasLoadedAllBookings, setHasLoadedAllBookings] = useState(false);
 
     // Pagination State
     const [currentPage, setCurrentPage] = useState(1);
@@ -67,7 +68,7 @@ export function AdminBookings() {
     };
 
     useEffect(() => {
-        loadBookings();
+        loadBookings({ todayOnly: true });
 
         // Subscribe to real-time booking updates — update state incrementally to minimise egress
         const subscription = subscribeToBookings(async (payload) => {
@@ -90,22 +91,69 @@ export function AdminBookings() {
         };
     }, []);
 
+    // Lazy-load full dataset only when admin explicitly switches to All Dates
+    useEffect(() => {
+        if (filterDate === 'all' && !hasLoadedAllBookings) {
+            loadBookings({ force: true });
+        }
+    }, [filterDate, hasLoadedAllBookings]);
+
     // Reset pagination when search or filter changes
     useEffect(() => {
         setCurrentPage(1);
     }, [searchTerm, filterStatus, filterDate, sortOrder]);
 
-    const loadBookings = async ({ force = false } = {}) => {
+    const getManilaDayUtcRange = (date = new Date()) => {
+        const manilaDate = new Intl.DateTimeFormat('en-CA', { timeZone: MANILA_TZ }).format(date);
+        const startUtcDate = new Date(`${manilaDate}T00:00:00+08:00`);
+        const endUtcDate = new Date(startUtcDate.getTime() + 86400000);
+        return {
+            startUtc: startUtcDate.toISOString(),
+            endUtc: endUtcDate.toISOString(),
+        };
+    };
+
+    const loadBookings = async ({ force = false, todayOnly = false, mergeToday = false } = {}) => {
         try {
             setLoading(true);
+            if (todayOnly) {
+                const { startUtc, endUtc } = getManilaDayUtcRange();
+                const startMs = Date.parse(startUtc);
+                const endMs = Date.parse(endUtc);
+                const bookingsData = await getAllBookings({ force, createdAtFrom: startUtc, createdAtTo: endUtc });
+
+                if (mergeToday) {
+                    setBookings(prev => {
+                        const nonToday = prev.filter((b) => {
+                            const createdAtMs = b.created_at ? toUTC(b.created_at).getTime() : NaN;
+                            return !(createdAtMs >= startMs && createdAtMs < endMs);
+                        });
+                        return [...(bookingsData || []), ...nonToday];
+                    });
+                } else {
+                    setBookings(bookingsData || []);
+                }
+
+                return;
+            }
+
             const bookingsData = await getAllBookings({ force });
             setBookings(bookingsData || []);
+            setHasLoadedAllBookings(true);
         } catch (err) {
             console.error('Error loading bookings:', err);
             setBookings([]);
         } finally {
             setLoading(false);
         }
+    };
+
+    const refreshCurrentView = async ({ force = true } = {}) => {
+        if (filterDate === 'today') {
+            await loadBookings({ force, todayOnly: true, mergeToday: true });
+            return;
+        }
+        await loadBookings({ force });
     };
 
     const updateStatus = async (id, newStatus) => {
@@ -120,7 +168,7 @@ export function AdminBookings() {
                 successDescription: 'The booking has been successfully cancelled.',
                 action: async () => {
                     await updateBookingStatus(id, newStatus);
-                    await loadBookings({ force: true });
+                    await refreshCurrentView({ force: true });
                 }
             });
             return;
@@ -128,7 +176,7 @@ export function AdminBookings() {
 
         try {
             await updateBookingStatus(id, newStatus);
-            await loadBookings({ force: true });
+            await refreshCurrentView({ force: true });
         } catch (err) {
             console.error('Error updating booking status:', err);
             alert('Failed to update booking status');
@@ -151,7 +199,7 @@ export function AdminBookings() {
                 throw new Error('Reschedule returned no data');
             }
 
-            await loadBookings({ force: true });
+            await refreshCurrentView({ force: true });
 
             // Show success message
             setActionModal({
@@ -216,7 +264,7 @@ export function AdminBookings() {
                         }
                     }
 
-                    await loadBookings({ force: true });
+                    await refreshCurrentView({ force: true });
                 } catch (err) {
                     alert('Failed to delete booking: ' + err.message);
                     throw err;
@@ -293,7 +341,7 @@ export function AdminBookings() {
                         <p className="text-gray-500">View and manage customer bookings</p>
                     </div>
                     <button
-                        onClick={() => loadBookings({ force: true })}
+                        onClick={() => refreshCurrentView({ force: true })}
                         disabled={loading}
                         title="Refresh bookings"
                         className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-brand-green-dark bg-brand-green/10 hover:bg-brand-green/20 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
