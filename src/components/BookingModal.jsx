@@ -560,7 +560,7 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
                             <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 mb-6 text-left">
                                 <p className="text-xs font-bold text-orange-900 mb-2">📌 What to do next:</p>
                                 <ul className="text-xs text-orange-800 space-y-1.5 ml-4 list-disc">
-                                    <li>Close this dialog and <strong>select different time slots</strong> from the calendar</li>
+                                    <li>Close this dialog and <strong>select different time slots</strong> from the availability modal</li>
                                     <li>Keep the <strong>same proof of payment</strong> — do NOT upload a new screenshot</li>
                                     <li>Select time slots with the <strong>same total price</strong> as what you already paid (₱{getDynamicPrice().toLocaleString()})</li>
                                     <li>You paid for <strong>{bookingData.times?.length || 1} hour(s)</strong>, so select {bookingData.times?.length || 1} slot(s)</li>

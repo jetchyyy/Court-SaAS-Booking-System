@@ -1,5 +1,6 @@
 import { Clock, Facebook, Instagram, Mail, MapPin, Phone } from 'lucide-react';
 import { Button } from './ui';
+import { LazyMapEmbed } from './LazyMapEmbed';
 
 export function Contact() {
     return (
@@ -96,17 +97,15 @@ export function Contact() {
                     </div>
 
                     {/* Map */}
-                    <div className="h-full min-h-[400px] w-full bg-gray-100 rounded-3xl overflow-hidden shadow-lg border border-gray-200">
-                        <iframe
+                    <div className="h-full min-h-[400px] w-full rounded-3xl overflow-hidden shadow-lg border border-gray-200">
+                        <LazyMapEmbed
                             src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d307.9333774424817!2d123.94258601627138!3d10.326493210451394!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x33a999007b7ab781%3A0xa291446a335dd76e!2sPickle%20Point-%20Cebu!5e1!3m2!1sen!2sph!4v1769687613671!5m2!1sen!2sph"
-                            width="100%"
-                            height="100%"
-                            style={{ border: 0 }}
-                            allowFullScreen=""
-                            loading="lazy"
-                            referrerPolicy="no-referrer-when-downgrade"
-                            className="w-full h-full"
-                        ></iframe>
+                            title="Pickle Point Cebu map"
+                            description="Load the venue map only when you want to view directions."
+                            buttonLabel="Show Venue Map"
+                            aspectClassName="min-h-[400px]"
+                            className="rounded-none border-0 shadow-none"
+                        />
                     </div>
                 </div>
             </div>

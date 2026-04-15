@@ -1,6 +1,7 @@
 import { format } from 'date-fns';
 import { Activity, Calendar, Clock, DollarSign, TrendingUp, Users } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Badge, Card } from '../../components/ui';
 import { getAllBookings } from '../../services/booking';
 import { listCourts } from '../../services/courts';
@@ -114,7 +115,7 @@ export function AdminDashboard() {
                 <div className="lg:col-span-2 space-y-6">
                     <div className="flex items-center justify-between">
                         <h2 className="text-lg font-bold text-gray-800">Recent Bookings</h2>
-                        <a href="/admin/bookings" className="text-sm text-brand-orange hover:underline">View All</a>
+                        <Link to="/admin/bookings" className="text-sm text-brand-orange hover:underline">View All</Link>
                     </div>
 
                     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">

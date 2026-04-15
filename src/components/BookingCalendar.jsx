@@ -7,42 +7,49 @@ import {
     getDay,
     isBefore,
     isSameDay,
-    isSameMonth,
     startOfMonth,
     startOfToday,
     subMonths
 } from 'date-fns';
 import { ChevronLeft, ChevronRight, Clock } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { cn } from './ui';
 
-export function BookingCalendar({ selectedDate, onDateSelect, selectedTimes = [], onTimeSelect, bookedTimes = [], fullyBookedDates = [] }) {
+export function BookingCalendar({
+    selectedDate,
+    onDateSelect,
+    selectedTimes = [],
+    onTimeSelect,
+    bookedTimes = [],
+    fullyBookedDates = [],
+    showLegend = true,
+    showInstructions = true,
+    showTimeSlots = true,
+    showDatePicker = true
+}) {
     const today = startOfToday();
-    const [currentMonth, setCurrentMonth] = useState(startOfMonth(today));
+    const [currentMonth, setCurrentMonth] = useState(startOfMonth(selectedDate || today));
 
-    // Generate days for the current month view
+    useEffect(() => {
+        if (selectedDate) {
+            setCurrentMonth(startOfMonth(selectedDate));
+        }
+    }, [selectedDate]);
+
     const days = eachDayOfInterval({
         start: startOfMonth(currentMonth),
         end: endOfMonth(currentMonth),
     });
 
-    // Calculate starting empty slots (0 = Sunday, 1 = Monday, etc.)
     const startingDayIndex = getDay(startOfMonth(currentMonth));
-
-    // Previous and Next Month handlers
     const nextMonth = () => setCurrentMonth(addMonths(currentMonth, 1));
     const prevMonth = () => setCurrentMonth(subMonths(currentMonth, 1));
 
-    // Generate 24-hour time slots with ranges (e.g., "8:00AM - 9:00AM")
     const timeSlots = Array.from({ length: 24 }, (_, i) => {
         const hour = i.toString().padStart(2, '0');
-        const nextHour = ((i + 1) % 24).toString().padStart(2, '0');
-
-        // Start time
         const startPeriod = i < 12 ? 'AM' : 'PM';
         const startDisplayHour = i === 0 ? 12 : (i > 12 ? i - 12 : i);
 
-        // End time (1 hour later)
         const endHourNum = (i + 1) % 24;
         const endPeriod = endHourNum < 12 ? 'AM' : 'PM';
         const endDisplayHour = endHourNum === 0 ? 12 : (endHourNum > 12 ? endHourNum - 12 : endHourNum);
@@ -53,40 +60,38 @@ export function BookingCalendar({ selectedDate, onDateSelect, selectedTimes = []
         };
     });
 
-    // Helper function to determine if time slot needs a date note
     const getDateNote = (slotId) => {
-        const hour = parseInt(slotId.split(':')[0]);
+        const hour = parseInt(slotId.split(':')[0], 10);
         const nextDay = addDays(selectedDate, 1);
 
-        // 11PM-12AM (23:00) - ends on next day
         if (hour === 23) {
             return `Ends on ${format(nextDay, 'MMM dd')}`;
         }
-        // 12AM-6AM (00:00-05:00) - is on next day
 
         return null;
     };
 
     return (
         <div className="space-y-8">
-            {/* Legend */}
-            <div className="flex flex-wrap gap-4 items-center text-sm px-4 py-3 bg-gray-50 rounded-xl border border-gray-200">
-                <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 rounded-full bg-white border-2 border-brand-green"></div>
-                    <span className="text-gray-700">Available</span>
+            {showLegend && (
+                <div className="flex flex-wrap gap-4 items-center text-sm px-4 py-3 bg-gray-50 rounded-xl border border-gray-200">
+                    <div className="flex items-center gap-2">
+                        <div className="w-4 h-4 rounded-full bg-white border-2 border-brand-green"></div>
+                        <span className="text-gray-700">Available</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <div className="w-4 h-4 rounded-full bg-brand-orange/30 border-2 border-brand-orange"></div>
+                        <span className="text-gray-700">Partially Booked</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <div className="w-4 h-4 rounded-full bg-red-100 border-2 border-red-400"></div>
+                        <span className="text-gray-700">Fully Booked</span>
+                    </div>
                 </div>
-                <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 rounded-full bg-brand-orange/30 border-2 border-brand-orange"></div>
-                    <span className="text-gray-700">Partially Booked</span>
-                </div>
-                <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 rounded-full bg-red-100 border-2 border-red-400"></div>
-                    <span className="text-gray-700">Fully Booked</span>
-                </div>
-            </div>
+            )}
 
-            {/* Calendar Section */}
-            <div className="space-y-4">
+            {showDatePicker && (
+                <div className="space-y-4">
                 <div className="flex items-center justify-between">
                     <h3 className="font-display font-semibold text-lg text-brand-green-dark">
                         {format(currentMonth, 'MMMM yyyy')}
@@ -108,27 +113,23 @@ export function BookingCalendar({ selectedDate, onDateSelect, selectedTimes = []
                     </div>
                 </div>
 
-                {/* Days Grid */}
                 <div className="grid grid-cols-7 gap-y-2 mb-2">
-                    {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => (
-                        <div key={index} className="text-center text-xs font-medium text-gray-400">
+                    {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day) => (
+                        <div key={day} className="text-center text-xs font-medium text-gray-400">
                             {day}
                         </div>
                     ))}
 
-                    {/* Empty slots for start of month */}
                     {Array.from({ length: startingDayIndex }).map((_, i) => (
                         <div key={`empty-${i}`} />
                     ))}
 
-                    {days.map((day, dayIdx) => {
+                    {days.map((day) => {
                         const isSelected = isSameDay(day, selectedDate);
                         const isPast = isBefore(day, today);
                         const isTodayDate = isSameDay(day, today);
-
-                        // Check if this day has a booking status
                         const dateStr = format(day, 'yyyy-MM-dd');
-                        const dateStatus = fullyBookedDates.find(d => d.date === dateStr);
+                        const dateStatus = fullyBookedDates.find((entry) => entry.date === dateStr);
                         const isFullyBooked = dateStatus?.status === 'fully-booked';
                         const isPartiallyBooked = dateStatus?.status === 'partially-booked';
 
@@ -160,10 +161,11 @@ export function BookingCalendar({ selectedDate, onDateSelect, selectedTimes = []
                         );
                     })}
                 </div>
-            </div>
+                </div>
+            )}
 
-            {/* Time Slots */}
-            <div className="space-y-4 pt-4 border-t border-gray-100">
+            {showTimeSlots && (
+                <div className="space-y-4 pt-4 border-t border-gray-100">
                 <div className="flex items-center justify-between">
                     <h3 className="font-display font-semibold text-lg text-brand-green-dark flex items-center gap-2">
                         <Clock size={18} /> Available Times
@@ -171,51 +173,50 @@ export function BookingCalendar({ selectedDate, onDateSelect, selectedTimes = []
                     <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">Select multiple</span>
                 </div>
 
-                {/* Instruction Card */}
-                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-2">
-                    <p className="text-sm font-semibold text-blue-900">📋 How to Select Your Time Slots</p>
-                    <ul className="text-xs text-blue-800 space-y-1.5 ml-2">
-                        <li className="flex items-start gap-2">
-                            <span className="text-blue-600 font-bold mt-0.5">1.</span>
-                            <span><strong>Click the time slots</strong> you want to book. Each slot is <strong>1 hour</strong> long.</span>
-                        </li>
-                        <li className="flex items-start gap-2">
-                            <span className="text-blue-600 font-bold mt-0.5">2.</span>
-                            <span>You can select <strong>multiple times</strong> - even non-consecutive hours (e.g., 7AM and 7PM).</span>
-                        </li>
-                        <li className="flex items-start gap-2">
-                            <span className="text-blue-600 font-bold mt-0.5">3.</span>
-                            <span>Selected times appear <strong className="text-orange-600">highlighted in orange</strong>. Your total price will adjust accordingly.</span>
-                        </li>
-                        <li className="flex items-start gap-2">
-                            <span className="text-blue-600 font-bold mt-0.5">4.</span>
-                            <span><strong className="text-purple-600">⚠️ Times after 11PM cross into the next day.</strong> Check the date notes on each slot.</span>
-                        </li>
-                        <li className="flex items-start gap-2">
-                            <span className="text-blue-600 font-bold mt-0.5">5.</span>
-                            <span>Once selected, click <strong>"Next"</strong> to proceed with your booking.</span>
-                        </li>
-                    </ul>
-                </div>
+                {showInstructions && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-2">
+                        <p className="text-sm font-semibold text-blue-900">How to Select Your Time Slots</p>
+                        <ul className="text-xs text-blue-800 space-y-1.5 ml-2">
+                            <li className="flex items-start gap-2">
+                                <span className="text-blue-600 font-bold mt-0.5">1.</span>
+                                <span><strong>Click the time slots</strong> you want to book. Each slot is <strong>1 hour</strong> long.</span>
+                            </li>
+                            <li className="flex items-start gap-2">
+                                <span className="text-blue-600 font-bold mt-0.5">2.</span>
+                                <span>You can select <strong>multiple times</strong> even if they are not consecutive.</span>
+                            </li>
+                            <li className="flex items-start gap-2">
+                                <span className="text-blue-600 font-bold mt-0.5">3.</span>
+                                <span>Selected times are <strong className="text-orange-600">highlighted in orange</strong>.</span>
+                            </li>
+                            <li className="flex items-start gap-2">
+                                <span className="text-blue-600 font-bold mt-0.5">4.</span>
+                                <span><strong className="text-purple-600">Times after 11PM cross into the next day.</strong> Check the date note on the slot.</span>
+                            </li>
+                            <li className="flex items-start gap-2">
+                                <span className="text-blue-600 font-bold mt-0.5">5.</span>
+                                <span>Once selected, click <strong>Next</strong> to proceed with your booking.</span>
+                            </li>
+                        </ul>
+                    </div>
+                )}
 
                 <div className="space-y-6">
-                    {/* Time Sections */}
                     {[
                         { title: 'Early Morning (12AM - 5AM)', range: [0, 1, 2, 3, 4, 5], note: 'Strictly No Walk-ins 12AM - 5AM' },
                         { title: 'Morning (6AM - 11AM)', range: [6, 7, 8, 9, 10, 11] },
                         { title: 'Afternoon (12PM - 5PM)', range: [12, 13, 14, 15, 16, 17] },
                         { title: 'Evening (6PM - 11PM)', range: [18, 19, 20, 21, 22, 23] },
-                    ].map((section, idx) => {
-                        // Filter slots for this section
-                        const sectionSlots = timeSlots.filter(slot => {
-                            const hour = parseInt(slot.id.split(':')[0]);
+                    ].map((section) => {
+                        const sectionSlots = timeSlots.filter((slot) => {
+                            const hour = parseInt(slot.id.split(':')[0], 10);
                             return section.range.includes(hour);
                         });
 
                         if (sectionSlots.length === 0) return null;
 
                         return (
-                            <div key={idx} className="space-y-3">
+                            <div key={section.title} className="space-y-3">
                                 <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-2">
                                     {section.title}
                                     {section.note && (
@@ -248,10 +249,12 @@ export function BookingCalendar({ selectedDate, onDateSelect, selectedTimes = []
                                                 <div className="flex flex-col items-center gap-0.5">
                                                     <span>{slot.label}</span>
                                                     {dateNote && !isBooked && (
-                                                        <span className={cn(
-                                                            "text-[10px] font-semibold",
-                                                            isSelected ? "text-orange-100" : "text-purple-600"
-                                                        )}>
+                                                        <span
+                                                            className={cn(
+                                                                'text-[10px] font-semibold',
+                                                                isSelected ? 'text-orange-100' : 'text-purple-600'
+                                                            )}
+                                                        >
                                                             {dateNote}
                                                         </span>
                                                     )}
@@ -264,7 +267,8 @@ export function BookingCalendar({ selectedDate, onDateSelect, selectedTimes = []
                         );
                     })}
                 </div>
-            </div>
+                </div>
+            )}
         </div>
     );
 }

@@ -1,4 +1,5 @@
 import { Car } from 'lucide-react';
+import { LazyMapEmbed } from './LazyMapEmbed';
 
 export function Parking() {
     return (
@@ -30,16 +31,12 @@ export function Parking() {
                                     <h4 className="text-xl font-bold text-gray-900">Mandaue City Parking Building</h4>
                                 </div>
                             </div>
-                            <div className="aspect-video w-full bg-gray-100 rounded-2xl overflow-hidden shadow-inner border border-gray-200">
-                                <iframe
-                                    width="100%"
-                                    height="100%"
-                                    frameBorder="0"
-                                    allowFullScreen
-                                    src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d1231.7332439194204!2d123.94227780570394!3d10.326561079742241!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x33a999b23fbbda97%3A0x873ce5859e106bfd!2sMandaue%20City%20Parking%20Building!5e1!3m2!1sen!2sph!4v1769845352536!5m2!1sen!2sph"
-                                    className="w-full h-full transition-all duration-500"
-                                ></iframe>
-                            </div>
+                            <LazyMapEmbed
+                                src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d1231.7332439194204!2d123.94227780570394!3d10.326561079742241!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x33a999b23fbbda97%3A0x873ce5859e106bfd!2sMandaue%20City%20Parking%20Building!5e1!3m2!1sen!2sph!4v1769845352536!5m2!1sen!2sph"
+                                title="Mandaue City Parking Building map"
+                                description="Open the day parking map only when needed."
+                                buttonLabel="Show Day Parking Map"
+                            />
                             <p className="mt-4 text-sm text-gray-500 text-center">Located just a short walk from the courts.</p>
                         </div>
 
@@ -53,16 +50,12 @@ export function Parking() {
                                     <h4 className="text-xl font-bold text-gray-900">Mandaue City Hall</h4>
                                 </div>
                             </div>
-                            <div className="aspect-video w-full bg-gray-100 rounded-2xl overflow-hidden shadow-inner border border-gray-200">
-                                <iframe
-                                    width="100%"
-                                    height="100%"
-                                    frameBorder="0"
-                                    allowFullScreen
-                                    src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d615.8653893176781!2d123.94299730826987!3d10.327190424017024!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x33a999b240f0bd77%3A0xbfe6ac0f099de4a4!2sLANDBANK%20-%20Mandaue%20City%20Hall!5e1!3m2!1sen!2sph!4v1769845543147!5m2!1sen!2sph"
-                                    className="w-full h-full transition-all duration-500"
-                                ></iframe>
-                            </div>
+                            <LazyMapEmbed
+                                src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d615.8653893176781!2d123.94299730826987!3d10.327190424017024!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x33a999b240f0bd77%3A0xbfe6ac0f099de4a4!2sLANDBANK%20-%20Mandaue%20City%20Hall!5e1!3m2!1sen!2sph!4v1769845543147!5m2!1sen!2sph"
+                                title="Mandaue City Hall map"
+                                description="Open the night parking map only when needed."
+                                buttonLabel="Show Night Parking Map"
+                            />
                             <p className="mt-4 text-sm text-gray-500 text-center">Safe and secure parking at the City Hall grounds.</p>
                         </div>
                     </div>

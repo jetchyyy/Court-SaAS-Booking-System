@@ -1,18 +1,25 @@
+import { lazy, Suspense, useState } from 'react';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { QueryProvider } from './providers/QueryProvider';
-import { AdminLayout } from './layouts/AdminLayout';
-import { AdminAnalytics } from './pages/admin/AdminAnalytics';
-import { AdminBookings } from './pages/admin/AdminBookings';
-import { AdminCalendar } from './pages/admin/AdminCalendar';
-import { AdminCourts } from './pages/admin/AdminCourts';
-import { AdminDashboard } from './pages/admin/AdminDashboard';
-import { AdminLogin } from './pages/AdminLogin';
-import { ChangePassword } from './pages/admin/AdminChangepassword';
-import { TimeSlotManagement } from './pages/admin/TimeSlotManagement';
-import { AdminQRCodes } from './pages/admin/AdminQRCodes';
-import { Home } from './pages/Home';
 import { SplashScreen } from './components/SplashScreen';
-import { useState } from 'react';
+
+const AdminLayout = lazy(() => import('./layouts/AdminLayout').then((module) => ({ default: module.AdminLayout })));
+const AdminAnalytics = lazy(() => import('./pages/admin/AdminAnalytics').then((module) => ({ default: module.AdminAnalytics })));
+const AdminBookings = lazy(() => import('./pages/admin/AdminBookings').then((module) => ({ default: module.AdminBookings })));
+const AdminCalendar = lazy(() => import('./pages/admin/AdminCalendar').then((module) => ({ default: module.AdminCalendar })));
+const AdminCourts = lazy(() => import('./pages/admin/AdminCourts').then((module) => ({ default: module.AdminCourts })));
+const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard').then((module) => ({ default: module.AdminDashboard })));
+const AdminLogin = lazy(() => import('./pages/AdminLogin').then((module) => ({ default: module.AdminLogin })));
+const ChangePassword = lazy(() => import('./pages/admin/AdminChangepassword').then((module) => ({ default: module.ChangePassword })));
+const TimeSlotManagement = lazy(() => import('./pages/admin/TimeSlotManagement').then((module) => ({ default: module.TimeSlotManagement })));
+const AdminQRCodes = lazy(() => import('./pages/admin/AdminQRCodes').then((module) => ({ default: module.AdminQRCodes })));
+const Home = lazy(() => import('./pages/Home').then((module) => ({ default: module.Home })));
+
+function RouteFallback() {
+  return (
+    <div className="min-h-screen bg-bg-user" aria-hidden="true" />
+  );
+}
 
 function App() {
   const [showSplash, setShowSplash] = useState(true);
@@ -21,22 +28,24 @@ function App() {
     <QueryProvider>
       {showSplash && <SplashScreen onComplete={() => setShowSplash(false)} />}
       <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/admin" element={<AdminLogin />} />
+        <Suspense fallback={<RouteFallback />}>
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/admin" element={<AdminLogin />} />
 
-          {/* Protected Admin Routes */}
-          <Route path="/admin" element={<AdminLayout />}>
-            <Route path="dashboard" element={<AdminDashboard />} />
-            <Route path="bookings" element={<AdminBookings />} />
-            <Route path="courts" element={<AdminCourts />} />
-            <Route path="calendar" element={<AdminCalendar />} />
-            <Route path="analytics" element={<AdminAnalytics />} />
-            <Route path="change-password" element={<ChangePassword />} />
-            <Route path="time-slots" element={<TimeSlotManagement />} />
-            <Route path="qr-codes" element={<AdminQRCodes />} />
-          </Route>
-        </Routes>
+            {/* Protected Admin Routes */}
+            <Route path="/admin" element={<AdminLayout />}>
+              <Route path="dashboard" element={<AdminDashboard />} />
+              <Route path="bookings" element={<AdminBookings />} />
+              <Route path="courts" element={<AdminCourts />} />
+              <Route path="calendar" element={<AdminCalendar />} />
+              <Route path="analytics" element={<AdminAnalytics />} />
+              <Route path="change-password" element={<ChangePassword />} />
+              <Route path="time-slots" element={<TimeSlotManagement />} />
+              <Route path="qr-codes" element={<AdminQRCodes />} />
+            </Route>
+          </Routes>
+        </Suspense>
       </BrowserRouter>
     </QueryProvider>
   );
