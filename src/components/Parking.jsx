@@ -22,13 +22,13 @@ export function Parking() {
 
                     <div className="grid lg:grid-cols-2">
                         {/* Day Parking */}
-                        <div className="p-8 sm:p-10 border-b lg:border-b-0 lg:border-r border-gray-100">
-                            <div className="flex items-center justify-between mb-6">
+                        <div className="p-6 sm:p-8 lg:p-10 border-b lg:border-b-0 lg:border-r border-gray-100">
+                            <div className="mb-6">
                                 <div>
                                     <span className="inline-block px-3 py-1 bg-brand-orange-light text-brand-orange text-xs font-bold uppercase tracking-wider rounded-full mb-2">
                                         6:00 AM - 8:00 PM
                                     </span>
-                                    <h4 className="text-xl font-bold text-gray-900">Mandaue City Parking Building</h4>
+                                    <h4 className="text-lg sm:text-xl font-bold text-gray-900">Mandaue City Parking Building</h4>
                                 </div>
                             </div>
                             <LazyMapEmbed
@@ -36,18 +36,19 @@ export function Parking() {
                                 title="Mandaue City Parking Building map"
                                 description="Open the day parking map only when needed."
                                 buttonLabel="Show Day Parking Map"
+                                aspectClassName="min-h-[260px] sm:min-h-[300px] lg:min-h-[340px]"
                             />
                             <p className="mt-4 text-sm text-gray-500 text-center">Located just a short walk from the courts.</p>
                         </div>
 
                         {/* Night Parking */}
-                        <div className="p-8 sm:p-10 bg-gray-50/50">
-                            <div className="flex items-center justify-between mb-6">
+                        <div className="p-6 sm:p-8 lg:p-10 bg-gray-50/50">
+                            <div className="mb-6">
                                 <div>
                                     <span className="inline-block px-3 py-1 bg-brand-green-light text-brand-green-dark text-xs font-bold uppercase tracking-wider rounded-full mb-2">
                                         8:00 PM - 6:00 AM
                                     </span>
-                                    <h4 className="text-xl font-bold text-gray-900">Mandaue City Hall</h4>
+                                    <h4 className="text-lg sm:text-xl font-bold text-gray-900">Mandaue City Hall</h4>
                                 </div>
                             </div>
                             <LazyMapEmbed
@@ -55,6 +56,7 @@ export function Parking() {
                                 title="Mandaue City Hall map"
                                 description="Open the night parking map only when needed."
                                 buttonLabel="Show Night Parking Map"
+                                aspectClassName="min-h-[260px] sm:min-h-[300px] lg:min-h-[340px]"
                             />
                             <p className="mt-4 text-sm text-gray-500 text-center">Safe and secure parking at the City Hall grounds.</p>
                         </div>
