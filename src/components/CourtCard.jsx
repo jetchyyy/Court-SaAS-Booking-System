@@ -111,7 +111,7 @@ export function CourtCard({ court, onBook }) {
                     <div className="mt-auto pt-4 border-t border-gray-100 flex items-center justify-between">
                         <div className="flex items-center gap-1 text-xs text-gray-500 font-medium">
                             <Users size={14} className="text-brand-green" />
-                            Up to {maxPlayers} player{maxPlayers !== 1 ? 's' : ''}
+                            Up to {maxPlayers} pax{maxPlayers !== 1 ? '' : ''}
                         </div>
                         <Button
                             variant="primary"
