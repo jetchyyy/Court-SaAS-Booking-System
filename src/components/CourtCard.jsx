@@ -4,6 +4,7 @@ import { useState } from 'react';
 
 export function CourtCard({ court, onBook }) {
     const [isExpanded, setIsExpanded] = useState(false);
+    const courtTypeLabel = court.type?.trim() || 'Court';
 
     // Format hour to 12-hour format
     const formatHour12 = (hour) => {
@@ -61,7 +62,7 @@ export function CourtCard({ court, onBook }) {
                             <h3 className="font-display font-bold text-lg text-brand-green-dark">{court.name}</h3>
                             <div className="flex items-center gap-1 text-gray-500 text-sm mt-1">
                                 <MapPin size={14} />
-                                <span>{court.type} Surface</span>
+                                <span>{courtTypeLabel}</span>
                             </div>
                         </div>
                         <div className="text-right">
@@ -174,7 +175,7 @@ export function CourtCard({ court, onBook }) {
                                     </h2>
                                     <div className="flex items-center gap-2 text-gray-600">
                                         <MapPin size={16} />
-                                        <span className="text-sm">{court.type} Surface</span>
+                                        <span className="text-sm">{courtTypeLabel}</span>
                                     </div>
                                 </div>
                                 <div className="text-right">

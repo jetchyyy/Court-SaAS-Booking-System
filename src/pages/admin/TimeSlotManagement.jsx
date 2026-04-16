@@ -44,6 +44,33 @@ export function TimeSlotManagement() {
     const isExclusiveCourt = selectedCourt?.type === 'Exclusive / Whole Court';
     const dateStr = format(selectedDate, 'yyyy-MM-dd');
 
+    const normalizeTimeSlot = (timeSlot) => {
+        if (!timeSlot || typeof timeSlot !== 'string') return '';
+        return timeSlot.replace(':00:00', ':00').replace(':00.000000', ':00').split(':').slice(0, 2).join(':');
+    };
+
+    const getBookingSlots = (booking) => {
+        if (!booking) return [];
+
+        if (Array.isArray(booking.booked_times) && booking.booked_times.length > 0) {
+            return booking.booked_times
+                .map((slot) => normalizeTimeSlot(slot))
+                .filter(Boolean);
+        }
+
+        if (!booking.start_time || !booking.end_time) return [];
+
+        const startHour = parseInt(String(booking.start_time).substring(0, 2), 10);
+        const endHour = parseInt(String(booking.end_time).substring(0, 2), 10);
+        const slots = [];
+
+        for (let hour = startHour; hour < endHour; hour += 1) {
+            slots.push(`${hour.toString().padStart(2, '0')}:00`);
+        }
+
+        return slots;
+    };
+
     // Fetch blocked slots with caching
     const { data: blockedSlots = [], isLoading: loadingBlocked } = useQuery({
         queryKey: isExclusiveCourt ? ['blockedSlots', 'all-courts', dateStr] : ['blockedSlots', selectedCourt?.id, dateStr],
@@ -72,16 +99,22 @@ export function TimeSlotManagement() {
         queryFn: async () => {
             if (!selectedCourt) return [];
 
-            let q = supabase.from('bookings').select('*').eq('booking_date', dateStr).in('status', ['confirmed', 'pending']);
-            if (isExclusiveCourt && courts.length > 0) {
-                q = q.in('court_id', courts.map(c => c.id));
-            } else {
-                q = q.eq('court_id', selectedCourt.id);
-            }
-            const { data, error } = await q;
+            const { data, error } = await supabase
+                .from('bookings')
+                .select('*, courts(id, type)')
+                .eq('booking_date', dateStr)
+                .in('status', ['Confirmed', 'Rescheduled']);
 
             if (error) throw error;
-            return data || [];
+
+            return (data || []).filter((booking) => {
+                if (isExclusiveCourt) return true;
+                return (
+                    booking.court_id === selectedCourt.id ||
+                    booking.courts?.type?.includes('Exclusive') ||
+                    booking.courts?.type?.includes('Whole')
+                );
+            });
         },
         enabled: !!selectedCourt,
         staleTime: 1 * 60 * 1000,
@@ -233,11 +266,6 @@ export function TimeSlotManagement() {
         };
     });
 
-    const normalizeTimeSlot = (timeSlot) => {
-        if (!timeSlot) return '';
-        return timeSlot.replace(':00:00', ':00').replace(':00.000000', ':00').split(':').slice(0, 2).join(':');
-    };
-
     const isSlotBlocked = (slotId) => {
         return blockedSlots.some(slot => {
             const normalizedSlot = normalizeTimeSlot(slot.time_slot);
@@ -248,17 +276,15 @@ export function TimeSlotManagement() {
 
     const isSlotBooked = (slotId) => {
         return bookedSlots.some(booking => {
-            const normalizedBooking = normalizeTimeSlot(booking.time_slot);
             const normalizedId = normalizeTimeSlot(slotId);
-            return normalizedBooking === normalizedId;
+            return getBookingSlots(booking).some(slot => slot === normalizedId);
         });
     };
 
     const getBookingInfo = (slotId) => {
         return bookedSlots.find(booking => {
-            const normalizedBooking = normalizeTimeSlot(booking.time_slot);
             const normalizedId = normalizeTimeSlot(slotId);
-            return normalizedBooking === normalizedId;
+            return getBookingSlots(booking).some(slot => slot === normalizedId);
         });
     };
 

@@ -8,6 +8,56 @@ export function invalidateAllBookingsCache() {
   allBookingsCache = null;
 }
 
+function normalizeSlot(slot) {
+  if (!slot || typeof slot !== 'string') return '';
+  return slot.trim().substring(0, 5);
+}
+
+function getConflictTimesFromDetail(detail = '', fallbackTimes = []) {
+  if (typeof detail !== 'string' || detail.trim() === '') {
+    return fallbackTimes.map((slot) => normalizeSlot(slot)).filter(Boolean);
+  }
+
+  return detail
+    .split(',')
+    .map((slot) => normalizeSlot(slot))
+    .filter(Boolean);
+}
+
+function removeProofOfPaymentByUrl(proofOfPaymentUrl) {
+  if (!proofOfPaymentUrl) return;
+
+  const marker = '/object/public/booking-proofs/';
+  const idx = proofOfPaymentUrl.indexOf(marker);
+  if (idx === -1) return;
+
+  const storagePath = decodeURIComponent(
+    proofOfPaymentUrl.substring(idx + marker.length).split('?')[0]
+  );
+
+  supabase.storage.from('booking-proofs').remove([storagePath]).catch((error) => {
+    console.warn('[booking] Could not remove orphaned proof from storage:', error);
+  });
+}
+
+function buildBookingConflictError(error, fallbackTimes = []) {
+  const conflictTimes = getConflictTimesFromDetail(error?.details, fallbackTimes).join(', ');
+
+  if (error?.message === 'ADMIN_BLOCKED') {
+    return new Error(
+      `🚫 These time slots have been blocked by the admin and are no longer available for booking: ${conflictTimes}. Please select different time slots.`
+    );
+  }
+
+  if (error?.message === 'ALREADY_BOOKED') {
+    return new Error(
+      `❌ Time slot conflict! The following times are already booked: ${conflictTimes}. Please refresh and select different time slots.`
+    );
+  }
+
+  return null;
+}
+
 // Calculate price based on time-based pricing rules
 export function calculatePriceForSlots(timeSlots, court) {
   if (!timeSlots || timeSlots.length === 0) return court.price;
@@ -64,7 +114,7 @@ export async function uploadProofOfPayment(file, bookingId) {
     const fileName = `${bookingId}-${Date.now()}.${fileExt}`;
     const filePath = `booking-proofs/${fileName}`;
 
-    const { error: uploadError, data: uploadData } = await supabase.storage
+    const { error: uploadError } = await supabase.storage
       .from('booking-proofs')
       .upload(filePath, file);
 
@@ -152,9 +202,9 @@ export async function checkTimeSlotConflicts(courtId, bookingDate, bookedTimes, 
       }
 
       if (blockedRows && blockedRows.length > 0) {
-        const blockedTimes = new Set(blockedRows.map(r => r.time_slot?.substring(0, 5)));
+        const blockedTimes = new Set(blockedRows.map(r => normalizeSlot(r.time_slot)));
         const adminBlockedConflicts = bookedTimes.filter(t =>
-          blockedTimes.has(t?.substring(0, 5))
+          blockedTimes.has(normalizeSlot(t))
         );
 
         if (adminBlockedConflicts.length > 0) {
@@ -223,10 +273,10 @@ export async function checkTimeSlotConflicts(courtId, bookingDate, bookedTimes, 
 
       for (const requestedTime of bookedTimes) {
         // Normalize both times for comparison
-        const normalizedRequested = requestedTime?.substring?.(0, 5) || requestedTime;
+        const normalizedRequested = normalizeSlot(requestedTime);
         const hasOverlap = timesToCheck.some(t => {
           if (!t || typeof t !== 'string') return false;
-          return t.substring(0, 5) === normalizedRequested;
+          return normalizeSlot(t) === normalizedRequested;
         });
 
         if (hasOverlap && !conflicts.includes(requestedTime)) {
@@ -260,6 +310,93 @@ export async function createBooking({
   bookedTimes = [],
   courtType = ''
 }) {
+  if (typeof globalThis !== 'undefined') {
+    try {
+      console.log('Starting booking creation...', { courtId, bookingDate, bookedTimes });
+
+      if (!courtId || !customerName || !customerEmail || !customerPhone || !bookingDate) {
+        throw new Error('Missing required booking information. Please fill in all fields.');
+      }
+
+      console.log('Checking for conflicts...');
+      const conflictCheck = await checkTimeSlotConflicts(courtId, bookingDate, bookedTimes, { courtType });
+
+      if (conflictCheck.hasConflict) {
+        const conflictTimes = conflictCheck.conflicts.join(', ');
+        if (conflictCheck.reason === 'admin_blocked') {
+          throw new Error(
+            `🚫 These time slots have been blocked by the admin and are no longer available for booking: ${conflictTimes}. Please select different time slots.`
+          );
+        }
+
+        throw new Error(
+          `❌ Time slot conflict! The following times are already booked: ${conflictTimes}. Please refresh and select different time slots.`
+        );
+      }
+
+      const { data, error } = await supabase.rpc('create_booking_atomic', {
+        p_court_id: courtId,
+        p_customer_name: customerName,
+        p_customer_email: customerEmail,
+        p_customer_phone: customerPhone,
+        p_booking_date: bookingDate,
+        p_start_time: startTime,
+        p_end_time: endTime,
+        p_total_price: totalPrice || 0,
+        p_notes: notes || '',
+        p_proof_of_payment_url: proofOfPaymentUrl || null,
+        p_booked_times: bookedTimes.length > 0 ? bookedTimes : [],
+        p_court_type: courtType || ''
+      });
+
+      if (error) {
+        console.error('Atomic booking RPC error:', error);
+
+        const conflictError = buildBookingConflictError(error, bookedTimes);
+        if (conflictError) {
+          removeProofOfPaymentByUrl(proofOfPaymentUrl);
+          throw conflictError;
+        }
+
+        if (error.code === 'PGRST116') {
+          removeProofOfPaymentByUrl(proofOfPaymentUrl);
+          throw new Error('❌ Database connection failed. Please check your internet connection and try again.');
+        }
+        if (error.code === '42501') {
+          removeProofOfPaymentByUrl(proofOfPaymentUrl);
+          throw new Error('❌ Permission denied. Please contact support if this issue persists.');
+        }
+
+        removeProofOfPaymentByUrl(proofOfPaymentUrl);
+        throw new Error(`❌ Booking failed: ${error.message}`);
+      }
+
+      if (!data || !data.id) {
+        console.error('Atomic booking RPC returned no row');
+        removeProofOfPaymentByUrl(proofOfPaymentUrl);
+        throw new Error('❌ Booking was not created. No data returned from database. Please try again or contact support.');
+      }
+
+      const { data: verifyData, error: verifyError } = await supabase
+        .from('bookings')
+        .select('*, courts(name, type)')
+        .eq('id', data.id)
+        .single();
+
+      if (verifyError || !verifyData) {
+        console.error('Verification error after atomic booking:', verifyError);
+        throw new Error('⚠️ Booking was created but verification failed. Please check your bookings or contact support.');
+      }
+
+      console.log('Booking verified successfully:', verifyData);
+      invalidateAllBookingsCache();
+      return verifyData;
+    } catch (err) {
+      console.error('Create booking error:', err);
+      throw err;
+    }
+  }
+
   // Retry logic for race conditions
   const maxRetries = 1;
   let lastError = null;
@@ -555,6 +692,93 @@ export async function rescheduleBooking({
   originalBookedTimes
 }) {
   try {
+    if (typeof globalThis !== 'undefined') {
+      const { data: checkData, error: checkError } = await supabase
+        .from('bookings')
+        .select('id, status, booking_date, booked_times, total_price, court_id')
+        .eq('id', bookingId)
+        .single();
+
+      if (checkError) {
+        throw new Error(`Failed to verify booking: ${checkError.message}`);
+      }
+
+      if (!checkData) {
+        throw new Error(`Booking with ID ${bookingId} not found`);
+      }
+
+      const { data: courtData } = await supabase
+        .from('courts')
+        .select('type')
+        .eq('id', checkData.court_id)
+        .single();
+
+      const conflictCheck = await checkTimeSlotConflicts(
+        checkData.court_id,
+        newDate,
+        newBookedTimes,
+        { courtType: courtData?.type || '', excludeBookingId: bookingId }
+      );
+
+      if (conflictCheck.hasConflict) {
+        if (conflictCheck.reason === 'admin_blocked') {
+          throw new Error(
+            `These time slots have been blocked by the admin and are no longer available for booking: ${conflictCheck.conflicts.join(', ')}.`
+          );
+        }
+
+        throw new Error(
+          `Time slot conflict on new date. The following times are already booked: ${conflictCheck.conflicts.join(', ')}.`
+        );
+      }
+
+      const { data, error } = await supabase.rpc('reschedule_booking_atomic', {
+        p_booking_id: bookingId,
+        p_new_date: newDate,
+        p_new_start_time: newStartTime,
+        p_new_end_time: newEndTime,
+        p_new_booked_times: newBookedTimes,
+        p_new_total_price: newTotalPrice,
+        p_reason: reason || '',
+        p_original_date: originalDate,
+        p_original_start_time: originalStartTime,
+        p_original_end_time: originalEndTime,
+        p_original_booked_times: originalBookedTimes || []
+      });
+
+      if (error) {
+        console.error('Atomic reschedule RPC error:', error);
+
+        const conflictError = buildBookingConflictError(error, newBookedTimes);
+        if (conflictError) {
+          throw conflictError;
+        }
+
+        if (error.message === 'BOOKING_NOT_FOUND') {
+          throw new Error(`Booking with ID ${bookingId} not found`);
+        }
+
+        throw new Error(`Reschedule failed: ${error.message}`);
+      }
+
+      if (!data || !data.id) {
+        throw new Error('Reschedule update returned no data. Please verify the booking was updated.');
+      }
+
+      const { data: verifyData, error: verifyError } = await supabase
+        .from('bookings')
+        .select('*, courts(name, type, price, pricing_rules)')
+        .eq('id', data.id)
+        .single();
+
+      if (verifyError || !verifyData) {
+        throw new Error('Reschedule completed but verification failed. Please refresh and verify the booking.');
+      }
+
+      invalidateAllBookingsCache();
+      return verifyData;
+    }
+
     // First, verify the booking exists and get its current total_price
     const { data: checkData, error: checkError } = await supabase
       .from('bookings')

@@ -6,6 +6,27 @@ import { AdminActionModal } from '../../components/admin/AdminActionModal';
 import { createCourt, listCourts, subscribeToCourts, updateCourt, toggleCourtStatus } from '../../services/courts';
 import { orderCourtsForHomepage, setCourtAsFirst, setHomepageCourtOrder } from '../../lib/courtDisplayOrder';
 
+const COURT_TYPE_OPTIONS = ['Outdoor Hard', 'Exclusive / Whole Court'];
+const CUSTOM_TYPE_VALUE = '__custom__';
+
+function getCourtTypeFormState(type = 'Outdoor Hard') {
+    const normalizedType = (type || '').trim();
+
+    if (!normalizedType || COURT_TYPE_OPTIONS.includes(normalizedType)) {
+        return {
+            type: normalizedType || 'Outdoor Hard',
+            typeSelection: normalizedType || 'Outdoor Hard',
+            customType: ''
+        };
+    }
+
+    return {
+        type: normalizedType,
+        typeSelection: CUSTOM_TYPE_VALUE,
+        customType: normalizedType
+    };
+}
+
 export function AdminCourts() {
     const queryClient = useQueryClient();
     const [courts, setCourts] = useState([]);
@@ -15,15 +36,18 @@ export function AdminCourts() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [imagePreview, setImagePreview] = useState([]);
+    const defaultTypeState = getCourtTypeFormState();
     const [formData, setFormData] = useState({
         name: '',
-        type: 'Outdoor Hard',
+        type: defaultTypeState.type,
         price: 350,
         description: '',
         imageFiles: null,
         pricingRules: [], // Array of { startHour, endHour, price }
         maxPlayers: 10 // Default to 10 players
     });
+    const [typeSelection, setTypeSelection] = useState(defaultTypeState.typeSelection);
+    const [customType, setCustomType] = useState(defaultTypeState.customType);
 
     const [actionModal, setActionModal] = useState({
         isOpen: false,
@@ -98,11 +122,17 @@ export function AdminCourts() {
         setError('');
 
         try {
+            const resolvedType = (typeSelection === CUSTOM_TYPE_VALUE ? customType : typeSelection).trim();
+
+            if (!resolvedType) {
+                throw new Error('Please select or enter a court type');
+            }
+
             if (isEditMode && editingCourtId) {
                 // Update existing court
                 await updateCourt(editingCourtId, {
                     name: formData.name,
-                    type: formData.type,
+                    type: resolvedType,
                     price: Number(formData.price),
                     description: formData.description,
                     imageFiles: formData.imageFiles || [],
@@ -113,7 +143,7 @@ export function AdminCourts() {
                 // Create new court
                 await createCourt({
                     name: formData.name,
-                    type: formData.type,
+                    type: resolvedType,
                     price: Number(formData.price),
                     description: formData.description,
                     imageFiles: formData.imageFiles || [],
@@ -134,19 +164,34 @@ export function AdminCourts() {
     };
 
     const handleEditCourt = (court) => {
+        const courtTypeState = getCourtTypeFormState(court.type);
         setIsEditMode(true);
         setEditingCourtId(court.id);
         setFormData({
             name: court.name,
-            type: court.type,
+            type: courtTypeState.type,
             price: court.price,
             description: court.description || '',
             imageFiles: null,
             pricingRules: court.pricing_rules || [],
             maxPlayers: court.max_players || 10
         });
+        setTypeSelection(courtTypeState.typeSelection);
+        setCustomType(courtTypeState.customType);
         setImagePreview((court.images && court.images.map(img => img.url)) || []);
         setIsFormOpen(true);
+    };
+
+    const handleTypeSelectionChange = (value) => {
+        setTypeSelection(value);
+        if (value !== CUSTOM_TYPE_VALUE) {
+            setFormData(prev => ({ ...prev, type: value }));
+        }
+    };
+
+    const handleCustomTypeChange = (value) => {
+        setCustomType(value);
+        setFormData(prev => ({ ...prev, type: value }));
     };
 
     const handleAddPricingRule = () => {
@@ -319,15 +364,18 @@ export function AdminCourts() {
         setIsFormOpen(false);
         setIsEditMode(false);
         setEditingCourtId(null);
+        const nextTypeState = getCourtTypeFormState();
         setFormData({
             name: '',
-            type: 'Outdoor Hard',
+            type: nextTypeState.type,
             price: 350,
             description: '',
             imageFiles: null,
             pricingRules: [],
             maxPlayers: 10
         });
+        setTypeSelection(nextTypeState.typeSelection);
+        setCustomType(nextTypeState.customType);
         setImagePreview([]);
         setError('');
     };
@@ -372,15 +420,31 @@ export function AdminCourts() {
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
-                                    <select
-                                        value={formData.type}
-                                        onChange={e => setFormData({ ...formData, type: e.target.value })}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-green outline-none"
-                                        disabled={loading}
-                                    >
-                                        <option>Outdoor Hard</option>
-                                        <option>Exclusive / Whole Court</option>
-                                    </select>
+                                    <div className="space-y-2">
+                                        <select
+                                            value={typeSelection}
+                                            onChange={e => handleTypeSelectionChange(e.target.value)}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-green outline-none"
+                                            disabled={loading}
+                                        >
+                                            {COURT_TYPE_OPTIONS.map((option) => (
+                                                <option key={option} value={option}>{option}</option>
+                                            ))}
+                                            <option value={CUSTOM_TYPE_VALUE}>Custom Type</option>
+                                        </select>
+
+                                        {typeSelection === CUSTOM_TYPE_VALUE && (
+                                            <input
+                                                required
+                                                type="text"
+                                                value={customType}
+                                                onChange={e => handleCustomTypeChange(e.target.value)}
+                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-green outline-none"
+                                                placeholder="Enter custom court type"
+                                                disabled={loading}
+                                            />
+                                        )}
+                                    </div>
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Price (₱/hr)</label>
