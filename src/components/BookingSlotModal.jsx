@@ -67,18 +67,18 @@ export function BookingSlotModal({
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose}></div>
 
-            <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-6xl max-h-[92vh] overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200">
-                <div className="px-6 sm:px-8 py-5 border-b border-gray-100 bg-gradient-to-r from-brand-green-light via-white to-brand-orange-light">
+            <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-6xl h-auto max-h-[94dvh] sm:max-h-[92vh] overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200">
+                <div className="shrink-0 px-4 sm:px-7 py-2.5 sm:py-3.5 border-b border-gray-100 bg-linear-to-r from-brand-green-light via-white to-brand-orange-light">
                     <div className="flex items-start justify-between gap-4">
-                        <div className="space-y-2">
-                            <div className="inline-flex px-3 py-1 bg-white/90 text-brand-orange text-xs font-bold uppercase tracking-wider rounded-full border border-brand-orange/20">
+                        <div className="space-y-1.5">
+                            <div className="inline-flex px-2.5 py-0.5 bg-white/90 text-brand-orange text-[10px] sm:text-xs font-bold uppercase tracking-wider rounded-full border border-brand-orange/20">
                                 Step {step} of 2
                             </div>
                             <div>
-                                <h2 className="text-2xl sm:text-3xl font-display font-bold text-brand-green-dark">
+                                <h2 className="text-lg sm:text-2xl font-display font-bold text-brand-green-dark leading-tight">
                                     {step === 1 ? 'Choose a Date' : 'Choose Time Slot'}
                                 </h2>
-                                <p className="text-sm text-gray-600 mt-1">
+                                <p className="hidden sm:block text-xs sm:text-sm text-gray-600 mt-0.5">
                                     {step === 1 ? (
                                         <>Pick an available date for <span className="font-semibold text-brand-green-dark">{selectedCourt.name}</span>.</>
                                     ) : (
@@ -97,29 +97,29 @@ export function BookingSlotModal({
                         </button>
                     </div>
 
-                    <div className="grid sm:grid-cols-3 gap-3 mt-5">
-                        <div className="bg-white/90 rounded-2xl border border-white px-4 py-3">
-                            <p className="text-xs uppercase tracking-wider text-gray-400 font-bold">Court</p>
-                            <p className="text-sm font-semibold text-gray-800 mt-1">{selectedCourt.name}</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-2.5 sm:mt-3.5">
+                        <div className="bg-white/90 rounded-lg sm:rounded-xl border border-white px-2.5 sm:px-3 py-2 sm:py-2.5">
+                            <p className="text-[10px] sm:text-xs uppercase tracking-wider text-gray-400 font-bold">Court</p>
+                            <p className="text-xs sm:text-sm font-semibold text-gray-800 mt-0.5 line-clamp-1">{selectedCourt.name}</p>
                         </div>
-                        <div className="bg-white/90 rounded-2xl border border-white px-4 py-3">
-                            <p className="text-xs uppercase tracking-wider text-gray-400 font-bold flex items-center gap-1">
-                                <CalendarDays size={12} /> Date
+                        <div className="bg-brand-orange-light/60 rounded-lg sm:rounded-xl border border-brand-orange/30 px-2.5 sm:px-3 py-2 sm:py-2.5 shadow-sm">
+                            <p className="text-[10px] sm:text-xs uppercase tracking-wider text-brand-orange font-bold flex items-center gap-1">
+                                <CalendarDays size={12} /> Date Selected
                             </p>
-                            <p className="text-sm font-semibold text-gray-800 mt-1">{format(selectedDate, 'MMMM d, yyyy')}</p>
+                            <p className="text-xs sm:text-base font-bold text-brand-green-dark mt-0.5">{format(selectedDate, 'MMMM d, yyyy')}</p>
                         </div>
-                        <div className="bg-white/90 rounded-2xl border border-white px-4 py-3">
-                            <p className="text-xs uppercase tracking-wider text-gray-400 font-bold flex items-center gap-1">
+                        <div className="col-span-2 sm:col-span-1 bg-white/90 rounded-lg sm:rounded-xl border border-white px-2.5 sm:px-3 py-2 sm:py-2.5">
+                            <p className="text-[10px] sm:text-xs uppercase tracking-wider text-gray-400 font-bold flex items-center gap-1">
                                 <Clock size={12} /> Selected
                             </p>
-                                <p className="text-sm font-semibold text-gray-800 mt-1">
+                                <p className="text-xs sm:text-sm font-semibold text-gray-800 mt-0.5 line-clamp-2">
                                 {step === 1 ? 'Choose a date first' : formatSelectedTimes(selectedTimes)}
                             </p>
                         </div>
                     </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto px-6 sm:px-8 py-6">
+                <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-7 py-4 sm:py-5">
                     {step === 2 && (
                         <div className="mb-6 rounded-2xl border border-brand-orange/20 bg-brand-orange-light/40 px-4 py-3">
                             <p className="text-xs font-bold uppercase tracking-wider text-brand-orange">Selected Date</p>
@@ -140,7 +140,7 @@ export function BookingSlotModal({
                     />
                 </div>
 
-                <div className="px-6 sm:px-8 py-5 border-t border-gray-100 bg-white">
+                <div className="shrink-0 px-4 sm:px-7 py-3 sm:py-4 border-t border-gray-100 bg-white">
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                         <div>
                             {validationError ? (

@@ -209,6 +209,11 @@ export async function updateCourt(courtId, { name, type, price, description, ima
     throw error;
   }
 
+  if (!data || data.length === 0) {
+    console.error('[updateCourt] No rows updated. Possible RLS/ownership restriction or missing row.', { courtId, updateData });
+    throw new Error('Failed to update court. You may not have permission to edit this court.');
+  }
+
   const { data: authData } = await supabase.auth.getUser();
   appendAuditLog({
     action: 'admin.courts.update',
