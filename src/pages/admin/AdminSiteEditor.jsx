@@ -402,10 +402,6 @@ export function AdminSiteEditor() {
 
                     <Panel title="Footer">
                         <TextField label="Copyright" value={content.footer.copyright} onChange={(value) => setPath(['footer', 'copyright'], value)} />
-                        <div className="grid gap-4 md:grid-cols-2">
-                            <TextField label="Credit Label" value={content.footer.creditLabel} onChange={(value) => setPath(['footer', 'creditLabel'], value)} />
-                            <TextField label="Credit URL" value={content.footer.creditUrl} onChange={(value) => setPath(['footer', 'creditUrl'], value)} />
-                        </div>
                     </Panel>
                 </div>
             </div>

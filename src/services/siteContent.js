@@ -183,7 +183,15 @@ export async function getSiteContent({ force = false } = {}) {
 
 export async function updateSiteContent(content) {
   const tenantId = await getCurrentTenantId({ force: true });
-  const normalized = normalizeSiteContent(content);
+  const current = await getSiteContent({ force: true });
+  const normalized = normalizeSiteContent({
+    ...content,
+    footer: {
+      ...(content?.footer || {}),
+      creditLabel: current.footer.creditLabel,
+      creditUrl: current.footer.creditUrl,
+    },
+  });
 
   const { data, error } = await supabase
     .from('tenant_site_content')
