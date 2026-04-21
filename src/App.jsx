@@ -13,6 +13,7 @@ const AdminLogin = lazy(() => import('./pages/AdminLogin').then((module) => ({ d
 const ChangePassword = lazy(() => import('./pages/admin/AdminChangepassword').then((module) => ({ default: module.ChangePassword })));
 const TimeSlotManagement = lazy(() => import('./pages/admin/TimeSlotManagement').then((module) => ({ default: module.TimeSlotManagement })));
 const AdminQRCodes = lazy(() => import('./pages/admin/AdminQRCodes').then((module) => ({ default: module.AdminQRCodes })));
+const AdminSiteEditor = lazy(() => import('./pages/admin/AdminSiteEditor').then((module) => ({ default: module.AdminSiteEditor })));
 const Home = lazy(() => import('./pages/Home').then((module) => ({ default: module.Home })));
 const SuperAdminLogin = lazy(() => import('./pages/SuperAdminLogin').then((module) => ({ default: module.SuperAdminLogin })));
 const SuperAdminLayout = lazy(() => import('./layouts/SuperAdminLayout').then((module) => ({ default: module.SuperAdminLayout })));
@@ -48,6 +49,7 @@ function App() {
               <Route path="change-password" element={<ChangePassword />} />
               <Route path="time-slots" element={<TimeSlotManagement />} />
               <Route path="qr-codes" element={<AdminQRCodes />} />
+              <Route path="site" element={<AdminSiteEditor />} />
             </Route>
 
             <Route path="/odc" element={<SuperAdminLayout />}>

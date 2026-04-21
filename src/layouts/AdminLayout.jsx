@@ -1,4 +1,4 @@
-import { BarChart3, Calendar, LayoutDashboard, LogOut, Settings, Users, KeyRound, Menu, QrCode, X, Lock } from 'lucide-react';
+import { BarChart3, Calendar, LayoutDashboard, LogOut, Settings, KeyRound, Menu, QrCode, X, Lock, MonitorCog } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '../components/ui';
@@ -103,6 +103,7 @@ export function AdminLayout() {
 
     const navItems = [
         { path: '/admin/dashboard', label: 'Overview', icon: LayoutDashboard },
+        { path: '/admin/site', label: 'Website Editor', icon: MonitorCog },
         { path: '/admin/bookings', label: 'Bookings', icon: Calendar },
         { path: '/admin/courts', label: 'Court Management', icon: Settings },
         { path: '/admin/time-slots', label: 'Time Slot Control', icon: Lock }, // **NEW**

@@ -3,8 +3,8 @@ import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button, Card } from '../../components/ui';
 import { AdminActionModal } from '../../components/admin/AdminActionModal';
-import { createCourt, listCourts, subscribeToCourts, updateCourt, toggleCourtStatus } from '../../services/courts';
-import { orderCourtsForHomepage, setCourtAsFirst, setHomepageCourtOrder } from '../../lib/courtDisplayOrder';
+import { createCourt, listCourts, subscribeToCourts, updateCourt, toggleCourtStatus, updateCourtOrder } from '../../services/courts';
+import { moveCourtId, orderCourtsForHomepage } from '../../lib/courtDisplayOrder';
 
 const COURT_TYPE_OPTIONS = ['Outdoor Hard', 'Exclusive / Whole Court'];
 const CUSTOM_TYPE_VALUE = '__custom__';
@@ -255,9 +255,31 @@ export function AdminCourts() {
         });
     };
 
+    const persistCourtOrder = async (ids) => {
+        const byId = new Map(courts.map((court) => [String(court.id), court]));
+        const nextCourts = ids.map((id, index) => ({
+            ...byId.get(id),
+            sort_order: (index + 1) * 10,
+        })).filter(Boolean);
+
+        setCourts(nextCourts);
+        await updateCourtOrder(ids);
+        await loadCourts({ force: true });
+        queryClient.invalidateQueries(['courts']);
+    };
+
     const handleSetFirst = async (court) => {
-        setCourtAsFirst(court.id, courts);
-        setCourts(prev => [...prev]);
+        if (loading) return;
+        setLoading(true);
+        setError('');
+        try {
+            const ids = orderedCourts.map(c => String(c.id)).filter((id) => id !== String(court.id));
+            await persistCourtOrder([String(court.id), ...ids]);
+        } catch (err) {
+            setError(err.message || 'Failed to update court order');
+        } finally {
+            setLoading(false);
+        }
     };
 
     const handleDragStart = (courtId) => {
@@ -272,33 +294,30 @@ export function AdminCourts() {
         }
     };
 
-    const handleDrop = (targetCourtId) => {
-        const draggedId = String(draggedCourtId || '');
-        const targetId = String(targetCourtId);
+    const handleDrop = async (targetCourtId) => {
+        const nextIds = moveCourtId(
+            orderedCourts.map(c => c.id),
+            draggedCourtId,
+            targetCourtId
+        );
 
-        if (!draggedId || !targetId || draggedId === targetId) {
+        if (nextIds.join('|') === orderedCourts.map(c => String(c.id)).join('|')) {
             setDraggedCourtId(null);
             setDragOverCourtId(null);
             return;
         }
 
-        const ids = orderedCourts.map(c => String(c.id));
-        const fromIndex = ids.indexOf(draggedId);
-        const toIndex = ids.indexOf(targetId);
-
-        if (fromIndex === -1 || toIndex === -1) {
+        setLoading(true);
+        setError('');
+        try {
+            await persistCourtOrder(nextIds);
+        } catch (err) {
+            setError(err.message || 'Failed to update court order');
+        } finally {
+            setLoading(false);
             setDraggedCourtId(null);
             setDragOverCourtId(null);
-            return;
         }
-
-        const [moved] = ids.splice(fromIndex, 1);
-        ids.splice(toIndex, 0, moved);
-
-        setHomepageCourtOrder(ids);
-        setCourts(prev => [...prev]);
-        setDraggedCourtId(null);
-        setDragOverCourtId(null);
     };
 
     const handleDragEnd = () => {
@@ -326,38 +345,34 @@ export function AdminCourts() {
         }
     };
 
-    const handleTouchEnd = () => {
+    const handleTouchEnd = async () => {
         if (!isTouchDragging) return;
 
-        const draggedId = String(draggedCourtId || '');
-        const targetId = String(dragOverCourtId || '');
+        const nextIds = moveCourtId(
+            orderedCourts.map(c => c.id),
+            draggedCourtId,
+            dragOverCourtId
+        );
 
-        if (!draggedId || !targetId || draggedId === targetId) {
+        if (nextIds.join('|') === orderedCourts.map(c => String(c.id)).join('|')) {
             setDraggedCourtId(null);
             setDragOverCourtId(null);
             setIsTouchDragging(false);
             return;
         }
 
-        const ids = orderedCourts.map(c => String(c.id));
-        const fromIndex = ids.indexOf(draggedId);
-        const toIndex = ids.indexOf(targetId);
-
-        if (fromIndex === -1 || toIndex === -1) {
+        setLoading(true);
+        setError('');
+        try {
+            await persistCourtOrder(nextIds);
+        } catch (err) {
+            setError(err.message || 'Failed to update court order');
+        } finally {
+            setLoading(false);
             setDraggedCourtId(null);
             setDragOverCourtId(null);
             setIsTouchDragging(false);
-            return;
         }
-
-        const [moved] = ids.splice(fromIndex, 1);
-        ids.splice(toIndex, 0, moved);
-
-        setHomepageCourtOrder(ids);
-        setCourts(prev => [...prev]);
-        setDraggedCourtId(null);
-        setDragOverCourtId(null);
-        setIsTouchDragging(false);
     };
 
     const resetForm = () => {

@@ -33,6 +33,83 @@ function generatePassword() {
   return `${token}Aa1!`;
 }
 
+function buildDefaultSiteContent(tenant: {
+  name: string;
+  contactEmail: string;
+  contactPhone: string;
+}) {
+  const currentYear = new Date().getFullYear();
+
+  return {
+    brand: {
+      name: tenant.name,
+      logoUrl: '',
+      shortLocation: 'Your Location',
+    },
+    sections: [
+      { id: 'hero', label: 'Hero', enabled: true },
+      { id: 'offers', label: 'Offers', enabled: true },
+      { id: 'courts', label: 'Courts', enabled: true },
+      { id: 'contact', label: 'Contact', enabled: true },
+      { id: 'parking', label: 'Parking', enabled: true },
+    ],
+    hero: {
+      eyebrow: 'Courts now open for booking',
+      titlePrefix: 'Book your next',
+      titleHighlight: tenant.name,
+      description: 'Reserve a court online, choose your preferred time, and enjoy a smooth visit from arrival to game time.',
+      primaryCta: 'Book a Court',
+      stats: [
+        { label: 'Easy Online Booking', icon: 'Calendar' },
+        { label: 'Open for Groups', icon: 'Users' },
+      ],
+      slides: [
+        { src: '/images/court1.jpg', title: 'Featured Court', subtitle: 'Ready for your next game' },
+        { src: '/images/court2.jpg', title: 'Quality Play', subtitle: 'Comfortable court experience' },
+      ],
+    },
+    offers: {
+      title: 'What This Place Offers',
+      description: 'Show guests the amenities and extras they can enjoy before and after their booking.',
+      items: [
+        { id: 'parking', title: 'Parking', icon: 'Car' },
+        { id: 'lounge', title: 'Lounge Area', icon: 'Armchair' },
+        { id: 'changing-room', title: 'Changing Room', icon: 'ShowerHead' },
+      ],
+    },
+    courts: {
+      title: 'Choose Your Court',
+      description: 'Select a court, choose an available date and time, then submit your booking details.',
+    },
+    contact: {
+      title: 'Get in Touch',
+      description: 'Questions about availability, events, or group reservations? Reach out or visit the venue.',
+      phones: tenant.contactPhone ? [tenant.contactPhone] : [],
+      hoursTitle: 'Open daily',
+      hoursNote: 'Update operating hours in the admin editor.',
+      email: tenant.contactEmail,
+      locationName: tenant.name,
+      address: '',
+      mapEmbedUrl: '',
+      socialText: 'Follow us for updates and private event announcements.',
+      facebookUrl: '',
+      instagramUrl: '',
+    },
+    parking: {
+      title: 'Parking Availability',
+      description: 'Add nearby parking options so guests know where to go before their game.',
+      items: [
+        { timeLabel: 'Day Parking', title: 'Main Parking Area', description: 'Add directions or notes for guests.', mapEmbedUrl: '' },
+      ],
+    },
+    footer: {
+      copyright: `(c) ${currentYear} ${tenant.name}. All rights reserved.`,
+      creditLabel: 'Odyssey',
+      creditUrl: 'https://www.facebook.com/profile.php?id=61587269647950',
+    },
+  };
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -166,6 +243,19 @@ serve(async (req) => {
       }]);
 
     if (memberError) throw memberError;
+
+    const { error: contentError } = await supabase
+      .from('tenant_site_content')
+      .insert([{
+        tenant_id: tenant.id,
+        content: buildDefaultSiteContent({
+          name,
+          contactEmail: ownerEmail,
+          contactPhone,
+        }),
+      }]);
+
+    if (contentError) throw contentError;
 
     return jsonResponse({
       tenant,

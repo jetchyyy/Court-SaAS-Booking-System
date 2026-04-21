@@ -84,7 +84,8 @@ export async function listCourts({ force = false } = {}) {
     .from('courts')
     .select('*')
     .eq('tenant_id', tenantId)
-    .order('created_at', { ascending: false });
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true });
 
   if (error) {
     console.error('listCourts error:', error);
@@ -119,6 +120,13 @@ export async function createCourt({ name, type, price, description, imageFiles, 
   const images = await uploadCourtImages(Array.from(imageFiles || []));
 
   const { data: user } = await supabase.auth.getUser();
+  const { data: currentCourts } = await supabase
+    .from('courts')
+    .select('sort_order')
+    .eq('tenant_id', tenantId)
+    .order('sort_order', { ascending: false })
+    .limit(1);
+  const nextSortOrder = Number(currentCourts?.[0]?.sort_order || 0) + 10;
 
   const { data, error } = await supabase
     .from('courts')
@@ -131,7 +139,8 @@ export async function createCourt({ name, type, price, description, imageFiles, 
       admin_id: user.user.id,
       images, // store array of { path, url }
       pricing_rules: pricingRules || [], // store time-based pricing rules
-      max_players: maxPlayers || 10 // store max players capacity
+      max_players: maxPlayers || 10, // store max players capacity
+      sort_order: nextSortOrder
     }])
     .select();
 
@@ -154,6 +163,36 @@ export async function createCourt({ name, type, price, description, imageFiles, 
 
   invalidateCourtsCache();
   return data?.[0];
+}
+
+export async function updateCourtOrder(courtIds) {
+  const tenantId = await getCurrentTenantId();
+  const orderedIds = (courtIds || []).map(String);
+
+  const updates = orderedIds.map((courtId, index) => (
+    supabase
+      .from('courts')
+      .update({ sort_order: (index + 1) * 10 })
+      .eq('tenant_id', tenantId)
+      .eq('id', courtId)
+      .select('id')
+      .single()
+  ));
+
+  const results = await Promise.all(updates);
+  const failed = results.find((result) => result.error);
+  if (failed?.error) throw failed.error;
+
+  const { data: authData } = await supabase.auth.getUser();
+  appendAuditLog({
+    action: 'admin.courts.reorder',
+    description: 'Updated homepage court order',
+    userId: authData?.user?.id || null,
+    userEmail: authData?.user?.email || null,
+    metadata: { courtIds: orderedIds },
+  });
+
+  invalidateCourtsCache();
 }
 
 // Update court (admin only)

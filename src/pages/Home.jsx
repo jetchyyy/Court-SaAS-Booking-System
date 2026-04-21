@@ -13,6 +13,7 @@ import { orderCourtsForHomepage } from '../lib/courtDisplayOrder';
 import { listCourts, subscribeToCourts } from '../services/courts';
 import { subscribeToBookings } from '../services/booking';
 import { getCurrentTenant, getCurrentTenantId } from '../services/tenants';
+import { getSiteContent } from '../services/siteContent';
 
 const BOOKING_CACHE_TTL = 30_000;
 const bookingCache = {};
@@ -48,6 +49,7 @@ export function Home() {
     const [validationError, setValidationError] = useState('');
     const [tenant, setTenant] = useState(null);
     const [tenantError, setTenantError] = useState('');
+    const [siteContent, setSiteContent] = useState(null);
 
     const visibleCourts = orderCourtsForHomepage(
         (activeCourts || []).filter((court) => court.is_active !== false)
@@ -69,7 +71,12 @@ export function Home() {
                     setTenantError('This booking site is currently unavailable.');
                     return;
                 }
-                loadCourts();
+                return Promise.all([loadCourts(), getSiteContent({ force: true })]);
+            })
+            .then((result) => {
+                if (Array.isArray(result)) {
+                    setSiteContent(result[1]);
+                }
             })
             .catch((err) => {
                 setTenantError(err.message || 'Unable to load this booking site.');
@@ -462,6 +469,53 @@ export function Home() {
 
     const bookedTimes = getBookedTimes();
     const fullyBookedDates = getFullyBookedDates();
+    const sectionOrder = siteContent?.sections?.length
+        ? siteContent.sections.filter((section) => section.enabled !== false)
+        : [];
+
+    const renderCourtsSection = () => (
+        <main key="courts" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-24 pb-20">
+            <section id="courts">
+                <div className="text-center max-w-2xl mx-auto mb-12">
+                    <h2 className="text-3xl sm:text-4xl font-display font-bold mb-4">{siteContent?.courts?.title || 'Choose Your Court'}</h2>
+                    <p className="text-gray-600">
+                        {siteContent?.courts?.description || 'Select a court, choose an available date and time, then submit your booking details.'}
+                    </p>
+                </div>
+
+                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+                    {visibleCourts.map((court) => (
+                        <CourtCard key={court.id} court={court} onBook={handleBookClick} />
+                    ))}
+                </div>
+
+                {validationError && !isSlotModalOpen && (
+                    <div className="mt-6 max-w-xl mx-auto text-center bg-red-50 border border-red-100 rounded-2xl px-4 py-3">
+                        <p className="text-sm font-medium text-red-600">{validationError}</p>
+                    </div>
+                )}
+
+                {selectedCourt && !isSlotModalOpen && !isModalOpen && (
+                    <div className="mt-8 max-w-2xl mx-auto bg-white border border-gray-100 rounded-3xl shadow-lg px-6 py-5 text-center">
+                        <p className="text-xs font-bold uppercase tracking-wider text-brand-orange">Last Selected Court</p>
+                        <h3 className="mt-2 text-2xl font-display font-bold text-brand-green-dark">{selectedCourt.name}</h3>
+                        <p className="mt-2 text-sm text-gray-600">
+                            Ready to continue? Use the Book Now button again to choose a fresh date and time.
+                        </p>
+                    </div>
+                )}
+            </section>
+        </main>
+    );
+
+    const renderSection = (section) => {
+        if (section.id === 'hero') return <Hero key="hero" content={siteContent} />;
+        if (section.id === 'offers') return <Offers key="offers" content={siteContent} />;
+        if (section.id === 'courts') return renderCourtsSection();
+        if (section.id === 'contact') return <Contact key="contact" content={siteContent} />;
+        if (section.id === 'parking') return <Parking key="parking" content={siteContent} />;
+        return null;
+    };
 
     const handleBookingConfirm = async (bookingData) => {
         try {
@@ -552,46 +606,9 @@ export function Home() {
                 </div>
             ) : (
             <>
-            <Navbar />
-            <Hero />
-            <Offers />
-
-            <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-24 pb-20">
-                <section id="courts">
-                    <div className="text-center max-w-2xl mx-auto mb-12">
-                        <h2 className="text-3xl sm:text-4xl font-display font-bold mb-4">Choose Your Court</h2>
-                        <p className="text-gray-600">
-                            Select from our professional-grade courts. When you tap Book Now, we&apos;ll open a booking modal where you can choose an available date and time before filling in your details.
-                        </p>
-                    </div>
-
-                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-                        {visibleCourts.map((court) => (
-                            <CourtCard key={court.id} court={court} onBook={handleBookClick} />
-                        ))}
-                    </div>
-
-                    {validationError && !isSlotModalOpen && (
-                        <div className="mt-6 max-w-xl mx-auto text-center bg-red-50 border border-red-100 rounded-2xl px-4 py-3">
-                            <p className="text-sm font-medium text-red-600">{validationError}</p>
-                        </div>
-                    )}
-
-                    {selectedCourt && !isSlotModalOpen && !isModalOpen && (
-                        <div className="mt-8 max-w-2xl mx-auto bg-white border border-gray-100 rounded-3xl shadow-lg px-6 py-5 text-center">
-                            <p className="text-xs font-bold uppercase tracking-wider text-brand-orange">Last Selected Court</p>
-                            <h3 className="mt-2 text-2xl font-display font-bold text-brand-green-dark">{selectedCourt.name}</h3>
-                            <p className="mt-2 text-sm text-gray-600">
-                                Ready to continue? Use the Book Now button again to choose a fresh date and time.
-                            </p>
-                        </div>
-                    )}
-                </section>
-            </main>
-
-            <Contact />
-            <Parking />
-            <Footer />
+            <Navbar content={siteContent} />
+            {sectionOrder.map(renderSection)}
+            <Footer content={siteContent} />
 
             <BookingSlotModal
                 isOpen={isSlotModalOpen}
