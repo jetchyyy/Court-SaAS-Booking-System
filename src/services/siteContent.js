@@ -204,6 +204,10 @@ export async function updateSiteContent(content) {
   const current = await getSiteContent({ force: true });
   const normalized = normalizeSiteContent({
     ...content,
+    splash: {
+      ...(content?.splash || {}),
+      durationMs: current.splash.durationMs,
+    },
     footer: {
       ...(content?.footer || {}),
       creditLabel: current.footer.creditLabel,

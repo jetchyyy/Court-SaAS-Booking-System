@@ -15,34 +15,48 @@ const DEFAULT_SPLASH = {
 
 export function SplashScreen({ onComplete }) {
     const [isFadingOut, setIsFadingOut] = useState(false);
-    const [splash, setSplash] = useState(DEFAULT_SPLASH);
+    const [splash, setSplash] = useState(null);
+    const [isReady, setIsReady] = useState(false);
 
     useEffect(() => {
         let isMounted = true;
+        const fallbackTimer = setTimeout(() => {
+            if (!isMounted) return;
+            setSplash(DEFAULT_SPLASH);
+            setIsReady(true);
+        }, 800);
 
         getSiteContent()
             .then((content) => {
                 if (!isMounted) return;
+                clearTimeout(fallbackTimer);
                 const nextSplash = { ...DEFAULT_SPLASH, ...(content?.splash || {}) };
                 setSplash(nextSplash);
+                setIsReady(true);
                 if (nextSplash.enabled === false) {
                     onComplete();
                 }
             })
-            .catch(() => null);
+            .catch(() => {
+                if (!isMounted) return;
+                clearTimeout(fallbackTimer);
+                setSplash(DEFAULT_SPLASH);
+                setIsReady(true);
+            });
 
         return () => {
             isMounted = false;
+            clearTimeout(fallbackTimer);
         };
     }, [onComplete]);
 
     const durationMs = useMemo(() => {
-        const value = Number(splash.durationMs);
+        const value = Number(splash?.durationMs);
         return Number.isFinite(value) ? Math.min(Math.max(value, 700), 5000) : DEFAULT_SPLASH.durationMs;
-    }, [splash.durationMs]);
+    }, [splash?.durationMs]);
 
     useEffect(() => {
-        if (splash.enabled === false) return undefined;
+        if (!isReady || !splash || splash.enabled === false) return undefined;
 
         document.body.style.overflow = 'hidden';
 
@@ -59,9 +73,9 @@ export function SplashScreen({ onComplete }) {
             clearTimeout(timer1);
             clearTimeout(timer2);
         };
-    }, [durationMs, onComplete, splash.enabled]);
+    }, [durationMs, isReady, onComplete, splash]);
 
-    if (splash.enabled === false) return null;
+    if (!isReady || !splash || splash.enabled === false) return null;
 
     const accentStyle = { backgroundColor: splash.accentColor };
     const textStyle = { color: splash.textColor };

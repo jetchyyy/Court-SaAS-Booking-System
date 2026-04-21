@@ -299,7 +299,6 @@ export function AdminSiteEditor() {
                         <TextField label="Splash Title" value={content.splash.title} onChange={(value) => setPath(['splash', 'title'], value)} />
                         <TextField label="Subtitle" value={content.splash.subtitle} onChange={(value) => setPath(['splash', 'subtitle'], value)} />
                         <TextField label="Initials" value={content.splash.initials} onChange={(value) => setPath(['splash', 'initials'], value.toUpperCase().slice(0, 3))} />
-                        <TextField label="Duration (milliseconds)" type="number" value={content.splash.durationMs} onChange={(value) => setPath(['splash', 'durationMs'], Number(value) || 2000)} />
                         <div className="grid grid-cols-3 gap-3">
                             <TextField label="Background" type="color" value={content.splash.backgroundColor} onChange={(value) => setPath(['splash', 'backgroundColor'], value)} />
                             <TextField label="Accent" type="color" value={content.splash.accentColor} onChange={(value) => setPath(['splash', 'accentColor'], value)} />
