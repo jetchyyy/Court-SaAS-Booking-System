@@ -5,6 +5,11 @@ import { getCurrentTenantId } from './tenants';
 // --- Simple in-memory cache for listCourts ---
 const CACHE_TTL_MS = 30_000; // 30 seconds
 let courtsCache = null;      // { data: [], timestamp: number } | null
+const MAX_COURT_IMAGE_FILES = 5;
+const MAX_ORIGINAL_IMAGE_MB = 8;
+const MAX_COMPRESSED_IMAGE_MB = 0.8;
+const MAX_ORIGINAL_IMAGE_BYTES = MAX_ORIGINAL_IMAGE_MB * 1024 * 1024;
+const MAX_COMPRESSED_IMAGE_BYTES = MAX_COMPRESSED_IMAGE_MB * 1024 * 1024;
 
 export function invalidateCourtsCache() {
   courtsCache = null;
@@ -14,10 +19,23 @@ export function invalidateCourtsCache() {
 export async function uploadCourtImages(files) {
   const results = [];
   const tenantId = await getCurrentTenantId();
+  const filesArray = Array.from(files || []);
 
-  console.log(`[uploadCourtImages] Starting upload for ${files.length} file(s)`);
+  if (filesArray.length > MAX_COURT_IMAGE_FILES) {
+    throw new Error(`You can upload up to ${MAX_COURT_IMAGE_FILES} court images at a time.`);
+  }
 
-  for (const file of files) {
+  console.log(`[uploadCourtImages] Starting upload for ${filesArray.length} file(s)`);
+
+  for (const file of filesArray) {
+    if (!file.type?.startsWith('image/')) {
+      throw new Error(`${file.name} is not a supported image file.`);
+    }
+
+    if (file.size > MAX_ORIGINAL_IMAGE_BYTES) {
+      throw new Error(`${file.name} is too large. Please upload images up to ${MAX_ORIGINAL_IMAGE_MB}MB.`);
+    }
+
     let fileToUpload = file;
     const originalType = file.type;
 
@@ -26,10 +44,10 @@ export async function uploadCourtImages(files) {
       try {
         const { default: imageCompression } = await import('browser-image-compression');
         const options = {
-          maxSizeMB: 0.4, // Target 400KB
+          maxSizeMB: MAX_COMPRESSED_IMAGE_MB,
           maxWidthOrHeight: 1920,
           useWebWorker: true,
-          initialQuality: 0.8
+          initialQuality: 0.78
         };
 
         console.log(`[uploadCourtImages] Original: ${file.name} (${(file.size / 1024).toFixed(0)} KB, type: ${originalType})`);
@@ -39,6 +57,10 @@ export async function uploadCourtImages(files) {
       } catch (err) {
         console.error('[uploadCourtImages] Compression failed, using original:', err);
       }
+    }
+
+    if (fileToUpload.size > MAX_COMPRESSED_IMAGE_BYTES) {
+      throw new Error(`${file.name} is still larger than ${MAX_COMPRESSED_IMAGE_MB}MB after compression. Please choose a smaller image.`);
     }
 
     const unique = `${tenantId}/${Date.now()}_${file.name.replace(/\s+/g, '_')}`;

@@ -513,6 +513,7 @@ export function AdminCourts() {
                                     disabled={loading}
                                 />
                                 <p className="text-xs text-gray-500 mt-1">You can upload multiple images</p>
+                                <p className="text-xs text-gray-500 mt-1">Limit: up to 5 images, 8MB each. Images are compressed before upload.</p>
                             </div>
 
                             {imagePreview.length > 0 && (

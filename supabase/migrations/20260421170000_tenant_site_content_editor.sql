@@ -30,6 +30,11 @@ values ('site-images', 'site-images', true)
 on conflict (id) do update
 set public = true;
 
+insert into storage.buckets (id, name, public)
+values ('court-images', 'court-images', true)
+on conflict (id) do update
+set public = true;
+
 drop policy if exists "public_read_site_images" on storage.objects;
 create policy "public_read_site_images"
   on storage.objects for select
@@ -64,6 +69,43 @@ create policy "tenant_managers_delete_site_images"
   to authenticated
   using (
     bucket_id = 'site-images'
+    and public.can_manage_tenant((storage.foldername(name))[1]::uuid)
+  );
+
+drop policy if exists "public_read_court_images" on storage.objects;
+create policy "public_read_court_images"
+  on storage.objects for select
+  to anon, authenticated
+  using (bucket_id = 'court-images');
+
+drop policy if exists "tenant_managers_insert_court_images" on storage.objects;
+create policy "tenant_managers_insert_court_images"
+  on storage.objects for insert
+  to authenticated
+  with check (
+    bucket_id = 'court-images'
+    and public.can_manage_tenant((storage.foldername(name))[1]::uuid)
+  );
+
+drop policy if exists "tenant_managers_update_court_images" on storage.objects;
+create policy "tenant_managers_update_court_images"
+  on storage.objects for update
+  to authenticated
+  using (
+    bucket_id = 'court-images'
+    and public.can_manage_tenant((storage.foldername(name))[1]::uuid)
+  )
+  with check (
+    bucket_id = 'court-images'
+    and public.can_manage_tenant((storage.foldername(name))[1]::uuid)
+  );
+
+drop policy if exists "tenant_managers_delete_court_images" on storage.objects;
+create policy "tenant_managers_delete_court_images"
+  on storage.objects for delete
+  to authenticated
+  using (
+    bucket_id = 'court-images'
     and public.can_manage_tenant((storage.foldername(name))[1]::uuid)
   );
 
