@@ -9,7 +9,7 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
     const [step, setStep] = useState(1);
     const [formData, setFormData] = useState({ name: '', phone: '', email: '', reference: '', paymentProof: null });
     const [errors, setErrors] = useState({});
-    const [paymentMethod, setPaymentMethod] = useState('gcash');
+    const [paymentMethod, setPaymentMethod] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isCompressing, setIsCompressing] = useState(false);
     const [originalFileSize, setOriginalFileSize] = useState(null);
@@ -45,7 +45,7 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
             setStep(1);
             setFormData({ name: '', phone: '', email: '', reference: '', paymentProof: null });
             setErrors({});
-            setPaymentMethod('gcash');
+            setPaymentMethod('');
             setIsSubmitting(false);
             isSubmittingRef.current = false; // Reset synchronous guard
             setSubmitError(null);
@@ -57,7 +57,12 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
             setDownloadError(null);
             setOriginalFileSize(null);
             // Fetch latest QR codes from CMS (cached, so very fast on repeat opens)
-            getQrCodes().then(setQrCodes).catch(() => {});
+            getQrCodes({ activeOnly: true })
+                .then((options) => {
+                    setQrCodes(options);
+                    setPaymentMethod(options[0]?.id || '');
+                })
+                .catch(() => {});
         }
         prevIsOpen.current = isOpen;
     }, [isOpen]);
@@ -65,6 +70,13 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
     if (!isOpen) return null;
 
     console.log('BookingModal render - current step:', step, 'isSubmitting:', isSubmitting);
+
+    const paymentOptions = Array.isArray(qrCodes) ? qrCodes : [];
+    const selectedPaymentOption =
+        paymentOptions.find(option => option.id === paymentMethod) ||
+        paymentOptions[0] ||
+        null;
+    const selectedPaymentLabel = selectedPaymentOption?.label || 'Payment';
 
     const handleNext = () => {
         const newErrors = {};
@@ -240,7 +252,7 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
         name: formData.name,
         phone: formData.phone,
         email: formData.email,
-        method: paymentMethod === 'gcash' ? 'GCash' : 'GoTyme',
+        method: selectedPaymentLabel,
         reference: `\u2022\u2022\u2022\u2022${formData.reference}`,
         total: `\u20b1${getDynamicPrice().toLocaleString()}`,
     });
@@ -630,7 +642,7 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
                                 <p className="text-gray-500 text-sm mt-1">
                                     {step === 1 && "You're almost ready to play!"}
                                     {step === 2 && "Please read and accept before paying"}
-                                    {step === 3 && "Scan to pay via GCash or GoTyme"}
+                                    {step === 3 && "Scan to pay with your selected method"}
                                     {step === 4 && "Review your details before confirming"}
                                 </p>
                             </>
@@ -835,56 +847,58 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
                                 <p className="text-sm font-medium text-center text-gray-700 mb-4">Scan QR Code to Pay</p>
 
                                 {/* Payment Method Toggle */}
-                                <div className="grid grid-cols-2 gap-2 mb-4 p-1 bg-gray-200/50 rounded-xl">
-                                    <button
-                                        onClick={() => setPaymentMethod('gcash')}
-                                        disabled={isSubmitting}
-                                        className={`py-2 px-4 rounded-lg text-sm font-medium transition-all duration-200 ${paymentMethod === 'gcash'
-                                            ? 'bg-white text-blue-700 shadow-sm'
-                                            : 'text-gray-500 hover:text-gray-700'
-                                            } ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                {paymentOptions.length > 0 ? (
+                                    <div
+                                        className="grid gap-2 mb-4 p-1 bg-gray-200/50 rounded-xl"
+                                        style={{ gridTemplateColumns: `repeat(${Math.min(paymentOptions.length, 3)}, minmax(0, 1fr))` }}
                                     >
-                                        GCash
-                                    </button>
-                                    <button
-                                        onClick={() => setPaymentMethod('gotyme')}
-                                        disabled={isSubmitting}
-                                        className={`py-2 px-4 rounded-lg text-sm font-medium transition-all duration-200 ${paymentMethod === 'gotyme'
-                                            ? 'bg-white text-indigo-700 shadow-sm'
-                                            : 'text-gray-500 hover:text-gray-700'
-                                            } ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                    >
-                                        GoTyme
-                                    </button>
-                                </div>
+                                        {paymentOptions.map(option => (
+                                            <button
+                                                key={option.id}
+                                                onClick={() => setPaymentMethod(option.id)}
+                                                disabled={isSubmitting}
+                                                className={`py-2 px-3 rounded-lg text-sm font-medium transition-all duration-200 truncate ${selectedPaymentOption?.id === option.id
+                                                    ? 'bg-white text-brand-green-dark shadow-sm'
+                                                    : 'text-gray-500 hover:text-gray-700'
+                                                    } ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                            >
+                                                {option.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="mb-4 p-3 text-center text-sm text-gray-400 bg-gray-100 rounded-xl">
+                                        {qrCodes === null ? 'Loading payment options...' : 'No payment options are currently available.'}
+                                    </div>
+                                )}
 
                                 {/* QR Code Display */}
                                 <div className="flex flex-col items-center p-4 bg-white rounded-xl border border-gray-200 shadow-sm transition-all duration-300">
-                                    <div className={`relative w-64 aspect-square mb-3 rounded-lg overflow-hidden group ${paymentMethod === 'gcash' ? 'bg-blue-50' : 'bg-indigo-50'
-                                        }`}>
-                                        <img
-                                            src={
-                                                qrCodes
-                                                    ? qrCodes[paymentMethod].image_url
-                                                    : (paymentMethod === 'gcash' ? '/images/gcash.jpg' : '/images/gotyme.jpg')
-                                            }
-                                            alt={`${paymentMethod === 'gcash' ? 'GCash' : 'GoTyme'} QR Code`}
-                                            className="w-full h-full object-contain"
-                                            onError={(e) => {
-                                                e.target.onerror = null;
-                                                e.target.src = `https://placehold.co/400x400?text=${paymentMethod === 'gcash' ? 'GCash' : 'GoTyme'}+QR`;
-                                            }}
-                                        />
+                                    <div className="relative w-64 aspect-square mb-3 rounded-lg overflow-hidden group bg-gray-50">
+                                        {selectedPaymentOption ? (
+                                            <img
+                                                src={selectedPaymentOption.image_url}
+                                                alt={`${selectedPaymentLabel} QR Code`}
+                                                className="w-full h-full object-contain"
+                                                onError={(e) => {
+                                                    e.target.onerror = null;
+                                                    e.target.src = `https://placehold.co/400x400?text=${encodeURIComponent(selectedPaymentLabel)}+QR`;
+                                                }}
+                                            />
+                                        ) : (
+                                            <div className="w-full h-full flex items-center justify-center">
+                                                <Loader size={24} className="animate-spin text-gray-300" />
+                                            </div>
+                                        )}
                                     </div>
 
                                     <div className="text-center">
                                         <p className="text-sm text-gray-500 mb-0.5">Account Name</p>
                                         <p className="font-bold text-gray-900 text-lg leading-tight mb-1">
-                                            {qrCodes ? qrCodes[paymentMethod].account_name : 'SYE SIMOLDE'}
+                                            {selectedPaymentOption?.account_name || 'Not set'}
                                         </p>
-                                        <span className={`text-xs font-bold uppercase tracking-wide ${paymentMethod === 'gcash' ? 'text-blue-600' : 'text-indigo-600'
-                                            }`}>
-                                            {paymentMethod === 'gcash' ? 'GCash Payment' : 'GoTyme Payment'}
+                                        <span className="text-xs font-bold uppercase tracking-wide text-brand-green-dark">
+                                            {selectedPaymentLabel} Payment
                                         </span>
                                     </div>
                                 </div>
@@ -918,7 +932,7 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Upload Proof of Payment</label>
                                     <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-2">
-                                        ⚠️ Upload your <strong>GCash or GoTyme payment screenshot</strong> showing the reference number and amount. Make sure the screenshot is clear and legible to avoid delays in processing your booking.
+                                        ⚠️ Upload your <strong>payment screenshot</strong> showing the reference number and amount. Make sure the screenshot is clear and legible to avoid delays in processing your booking.
                                     </p>
                                     <div className="relative">
                                         <input
@@ -1008,7 +1022,7 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
                                                                     )}
                                                                 </span>
                                                             )
-                                                            : 'Upload your GCash / GoTyme screenshot'}
+                                                            : 'Upload your payment screenshot'}
                                                     </span>
                                                 </>
                                             )}
@@ -1030,7 +1044,7 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
                                 <Button
                                     className="flex-1 text-white"
                                     onClick={handleNextFromPayment}
-                                    disabled={isSubmitting || isCompressing}
+                                    disabled={isSubmitting || isCompressing || !selectedPaymentOption}
                                 >
                                     Review Booking
                                 </Button>
@@ -1104,7 +1118,7 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
                                 <div className="bg-gray-50 rounded-2xl p-4 space-y-3">
                                     <div className="flex justify-between items-center pb-3 border-b border-gray-200">
                                         <span className="text-gray-500 text-sm">Method</span>
-                                        <span className="font-semibold text-gray-800">{paymentMethod === 'gcash' ? 'GCash' : 'GoTyme'}</span>
+                                        <span className="font-semibold text-gray-800">{selectedPaymentLabel}</span>
                                     </div>
                                     <div className="flex justify-between items-center pb-3 border-b border-gray-200">
                                         <span className="text-gray-500 text-sm">Reference (last 4)</span>
@@ -1212,7 +1226,7 @@ export function BookingModal({ isOpen, onClose, bookingData, onConfirm }) {
                                         <p className="text-xs font-bold uppercase tracking-wider text-gray-400">Payment</p>
                                         <div className="flex justify-between text-sm">
                                             <span className="text-gray-500">Method</span>
-                                            <span className="font-semibold text-gray-800">{paymentMethod === 'gcash' ? 'GCash' : 'GoTyme'}</span>
+                                            <span className="font-semibold text-gray-800">{selectedPaymentLabel}</span>
                                         </div>
                                         <div className="flex justify-between text-sm">
                                             <span className="text-gray-500">Reference</span>

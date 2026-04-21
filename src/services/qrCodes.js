@@ -1,20 +1,73 @@
 import { supabase } from '../lib/supabaseClient';
 import { appendAuditLog } from './auditLogs';
 
-// Fallback values if the table doesn't exist yet or has no rows
-const DEFAULTS = {
-  gcash:  { image_url: '/images/gcash.jpg',  account_name: 'SYE SIMOLDE' },
-  gotyme: { image_url: '/images/gotyme.jpg', account_name: 'SYE SIMOLDE' },
-};
+export const MAX_QR_FILE_SIZE_MB = 5;
 
-// Module-level cache
+export const DEFAULT_QR_OPTIONS = [
+  {
+    id: 'gcash',
+    label: 'GCash',
+    image_url: '/images/gcash.jpg',
+    account_name: 'SYE SIMOLDE',
+    is_active: true,
+    sort_order: 10,
+  },
+  {
+    id: 'gotyme',
+    label: 'GoTyme',
+    image_url: '/images/gotyme.jpg',
+    account_name: 'SYE SIMOLDE',
+    is_active: true,
+    sort_order: 20,
+  },
+];
+
 let qrCache = null;
 let qrCacheTimestamp = null;
-const QR_CACHE_TTL = 60_000; // 1 minute
+const QR_CACHE_TTL = 60_000;
 
 function normalizeImageUrl(url) {
   if (!url || typeof url !== 'string') return '';
   return url.split('?')[0];
+}
+
+function normalizeQrCode(row, index = 0) {
+  const fallback = DEFAULT_QR_OPTIONS.find(option => option.id === row?.id);
+  const label = row?.label || fallback?.label || row?.id || 'Payment Option';
+
+  return {
+    id: row?.id || createQrOptionId(label),
+    label,
+    image_url: normalizeImageUrl(row?.image_url) || fallback?.image_url || '',
+    account_name: row?.account_name || fallback?.account_name || '',
+    is_active: row?.is_active !== false,
+    sort_order: Number.isFinite(Number(row?.sort_order))
+      ? Number(row.sort_order)
+      : fallback?.sort_order || (index + 1) * 10,
+  };
+}
+
+function sortQrCodes(options) {
+  return [...options].sort((a, b) => {
+    const orderDiff = (a.sort_order || 0) - (b.sort_order || 0);
+    if (orderDiff !== 0) return orderDiff;
+    return a.label.localeCompare(b.label);
+  });
+}
+
+function filterOptions(options, activeOnly) {
+  return activeOnly ? options.filter(option => option.is_active) : options;
+}
+
+export function createQrOptionId(label) {
+  const slug = String(label || 'payment')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 32);
+
+  return `${slug || 'payment'}-${Date.now()}`;
 }
 
 export function invalidateQrCache() {
@@ -22,48 +75,36 @@ export function invalidateQrCache() {
   qrCacheTimestamp = null;
 }
 
-/**
- * Returns { gcash: { image_url, account_name }, gotyme: { image_url, account_name } }
- * Falls back to DEFAULTS on any error so the booking modal never breaks.
- */
-export async function getQrCodes() {
+export async function getQrCodes({ activeOnly = false } = {}) {
   const now = Date.now();
   if (qrCache && qrCacheTimestamp && now - qrCacheTimestamp < QR_CACHE_TTL) {
-    return qrCache;
+    return filterOptions(qrCache, activeOnly);
   }
 
   try {
-    const { data, error } = await supabase.from('qr_codes').select('*');
-    if (error || !data || data.length === 0) return { ...DEFAULTS };
+    const { data, error } = await supabase
+      .from('qr_codes')
+      .select('*')
+      .order('sort_order', { ascending: true })
+      .order('label', { ascending: true });
 
-    const result = {
-      gcash:  { ...DEFAULTS.gcash },
-      gotyme: { ...DEFAULTS.gotyme },
-    };
-    for (const row of data) {
-      if (row.id === 'gcash' || row.id === 'gotyme') {
-        result[row.id] = {
-          image_url:    normalizeImageUrl(row.image_url) || DEFAULTS[row.id].image_url,
-          account_name: row.account_name || DEFAULTS[row.id].account_name,
-        };
-      }
+    if (error || !data || data.length === 0) {
+      qrCache = sortQrCodes(DEFAULT_QR_OPTIONS.map(normalizeQrCode));
+      qrCacheTimestamp = now;
+      return filterOptions(qrCache, activeOnly);
     }
 
-    qrCache = result;
+    const normalized = sortQrCodes(data.map(normalizeQrCode));
+    qrCache = normalized.length > 0
+      ? normalized
+      : sortQrCodes(DEFAULT_QR_OPTIONS.map(normalizeQrCode));
     qrCacheTimestamp = now;
-    return result;
+    return filterOptions(qrCache, activeOnly);
   } catch {
-    return { ...DEFAULTS };
+    return filterOptions(sortQrCodes(DEFAULT_QR_OPTIONS.map(normalizeQrCode)), activeOnly);
   }
 }
 
-export const MAX_QR_FILE_SIZE_MB = 5;
-
-/**
- * Compresses then uploads a QR image file to the `qr-images` bucket.
- * Rejects files over MAX_QR_FILE_SIZE_MB before compression.
- * Returns the stable public URL for the uploaded file.
- */
 export async function uploadQrImage(provider, file) {
   if (file.size > MAX_QR_FILE_SIZE_MB * 1024 * 1024) {
     throw new Error(`File is too large. Maximum size is ${MAX_QR_FILE_SIZE_MB} MB.`);
@@ -74,7 +115,7 @@ export async function uploadQrImage(provider, file) {
     try {
       const { default: imageCompression } = await import('browser-image-compression');
       const compressed = await imageCompression(file, {
-        maxSizeMB: 0.3,          // Target ≤300 KB — plenty for a QR code
+        maxSizeMB: 0.3,
         maxWidthOrHeight: 1200,
         useWebWorker: true,
         initialQuality: 0.85,
@@ -86,9 +127,8 @@ export async function uploadQrImage(provider, file) {
   }
 
   const ext = fileToUpload.name.split('.').pop() || 'jpg';
-  // Always overwrite the same logical path per provider so storage
-  // doesn't accumulate orphaned files.
-  const path = `${provider}_qr.${ext}`;
+  const safeProvider = String(provider || 'payment').replace(/[^a-zA-Z0-9_-]/g, '-');
+  const path = `${safeProvider}_qr.${ext}`;
 
   const { error } = await supabase.storage
     .from('qr-images')
@@ -104,30 +144,55 @@ export async function uploadQrImage(provider, file) {
   return normalizeImageUrl(urlData.publicUrl);
 }
 
-/**
- * Upserts a QR code record (gcash or gotyme) in the `qr_codes` table.
- */
-export async function updateQrCode(provider, { image_url, account_name }) {
-  const { error } = await supabase.from('qr_codes').upsert({
-    id: provider,
-    image_url: normalizeImageUrl(image_url),
+export async function createQrCode({ label, image_url = '', account_name = '', sort_order = 0 }) {
+  const id = createQrOptionId(label);
+  await saveQrCode(id, {
+    label,
+    image_url,
     account_name,
-    updated_at: new Date().toISOString(),
-  });
+    is_active: true,
+    sort_order,
+  }, 'created');
 
+  return id;
+}
+
+export async function updateQrCode(provider, updates) {
+  await saveQrCode(provider, updates, 'updated');
+}
+
+async function saveQrCode(provider, updates, actionLabel) {
+  const payload = {
+    id: provider,
+    updated_at: new Date().toISOString(),
+  };
+
+  if ('label' in updates) payload.label = String(updates.label || '').trim();
+  if ('image_url' in updates) payload.image_url = normalizeImageUrl(updates.image_url);
+  if ('account_name' in updates) payload.account_name = String(updates.account_name || '').trim();
+  if ('is_active' in updates) payload.is_active = updates.is_active !== false;
+  if ('sort_order' in updates) payload.sort_order = Number(updates.sort_order) || 0;
+
+  if (!payload.label && actionLabel === 'created') {
+    throw new Error('Payment option name is required.');
+  }
+
+  const { error } = await supabase.from('qr_codes').upsert(payload);
   if (error) throw new Error(`Failed to save: ${error.message}`);
 
   const { data: authData } = await supabase.auth.getUser();
   appendAuditLog({
     action: 'admin.qr.update',
-    description: `Updated ${provider.toUpperCase()} QR details`,
+    description: `${actionLabel === 'created' ? 'Created' : 'Updated'} QR payment option`,
     userId: authData?.user?.id || null,
     userEmail: authData?.user?.email || null,
     metadata: {
       provider,
-      hasImage: !!image_url,
-      hasAccountName: !!account_name
-    }
+      label: payload.label,
+      isActive: payload.is_active,
+      hasImage: !!payload.image_url,
+      hasAccountName: !!payload.account_name,
+    },
   });
 
   invalidateQrCache();

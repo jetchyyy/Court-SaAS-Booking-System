@@ -60,9 +60,9 @@ begin
       b.court_id,
       coalesce(c.type, '') as court_type,
       case
-        when coalesce(array_length(b.booked_times, 1), 0) > 0 then (
+        when jsonb_typeof(b.booked_times) = 'array' and jsonb_array_length(b.booked_times) > 0 then (
           select array_agg(distinct left(trim(slot), 5) order by left(trim(slot), 5))
-          from unnest(b.booked_times) as slot
+          from jsonb_array_elements_text(b.booked_times) as slot
           where trim(slot) <> ''
         )
         else (
@@ -123,7 +123,7 @@ begin
     'Confirmed',
     coalesce(p_notes, ''),
     p_proof_of_payment_url,
-    v_requested_slots
+    to_jsonb(v_requested_slots)
   )
   returning * into v_booking;
 
@@ -212,9 +212,9 @@ begin
       b.court_id,
       coalesce(c.type, '') as court_type,
       case
-        when coalesce(array_length(b.booked_times, 1), 0) > 0 then (
+        when jsonb_typeof(b.booked_times) = 'array' and jsonb_array_length(b.booked_times) > 0 then (
           select array_agg(distinct left(trim(slot), 5) order by left(trim(slot), 5))
-          from unnest(b.booked_times) as slot
+          from jsonb_array_elements_text(b.booked_times) as slot
           where trim(slot) <> ''
         )
         else (
@@ -255,7 +255,7 @@ begin
     booking_date = p_new_date,
     start_time = p_new_start_time,
     end_time = p_new_end_time,
-    booked_times = v_requested_slots,
+    booked_times = to_jsonb(v_requested_slots),
     total_price = p_new_total_price,
     status = 'Rescheduled',
     rescheduled_from = jsonb_build_object(
