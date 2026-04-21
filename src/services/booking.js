@@ -1,5 +1,10 @@
 import { supabase } from '../lib/supabaseClient';
 import { getCurrentTenantId } from './tenants';
+
+const MAX_PAYMENT_PROOF_ORIGINAL_MB = 8;
+const MAX_PAYMENT_PROOF_COMPRESSED_MB = 0.8;
+const MAX_PAYMENT_PROOF_ORIGINAL_BYTES = MAX_PAYMENT_PROOF_ORIGINAL_MB * 1024 * 1024;
+const MAX_PAYMENT_PROOF_COMPRESSED_BYTES = MAX_PAYMENT_PROOF_COMPRESSED_MB * 1024 * 1024;
 import { listCourts } from './courts';
 
 // --- In-memory cache for getAllBookings (admin) ---
@@ -112,6 +117,31 @@ export async function uploadProofOfPayment(file, bookingId) {
       throw new Error('No file provided for upload');
     }
 
+    if (!file.type?.startsWith('image/')) {
+      throw new Error('Proof of payment must be an image file.');
+    }
+
+    if (file.size > MAX_PAYMENT_PROOF_ORIGINAL_BYTES) {
+      throw new Error(`Proof of payment is too large. Please upload an image up to ${MAX_PAYMENT_PROOF_ORIGINAL_MB}MB.`);
+    }
+
+    let fileToUpload = file;
+    try {
+      const { default: imageCompression } = await import('browser-image-compression');
+      fileToUpload = await imageCompression(file, {
+        maxSizeMB: MAX_PAYMENT_PROOF_COMPRESSED_MB,
+        maxWidthOrHeight: 1600,
+        useWebWorker: true,
+        initialQuality: 0.78,
+      });
+    } catch (err) {
+      console.warn('[uploadProofOfPayment] Compression failed, using original:', err);
+    }
+
+    if (fileToUpload.size > MAX_PAYMENT_PROOF_COMPRESSED_BYTES) {
+      throw new Error(`Proof of payment is still larger than ${MAX_PAYMENT_PROOF_COMPRESSED_MB}MB after compression. Please choose a smaller image.`);
+    }
+
     const fileExt = file.name.split('.').pop();
     const tenantId = await getCurrentTenantId();
     const fileName = `${bookingId}-${Date.now()}.${fileExt}`;
@@ -119,7 +149,9 @@ export async function uploadProofOfPayment(file, bookingId) {
 
     const { error: uploadError } = await supabase.storage
       .from('booking-proofs')
-      .upload(filePath, file);
+      .upload(filePath, fileToUpload, {
+        contentType: file.type || 'image/jpeg',
+      });
 
     if (uploadError) {
       throw new Error(`Failed to upload proof of payment: ${uploadError.message}`);

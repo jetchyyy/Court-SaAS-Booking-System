@@ -35,6 +35,16 @@ values ('court-images', 'court-images', true)
 on conflict (id) do update
 set public = true;
 
+insert into storage.buckets (id, name, public)
+values ('booking-proofs', 'booking-proofs', true)
+on conflict (id) do update
+set public = true;
+
+insert into storage.buckets (id, name, public)
+values ('qr-images', 'qr-images', true)
+on conflict (id) do update
+set public = true;
+
 drop policy if exists "public_read_site_images" on storage.objects;
 create policy "public_read_site_images"
   on storage.objects for select
@@ -106,6 +116,67 @@ create policy "tenant_managers_delete_court_images"
   to authenticated
   using (
     bucket_id = 'court-images'
+    and public.can_manage_tenant((storage.foldername(name))[1]::uuid)
+  );
+
+drop policy if exists "public_read_booking_proofs" on storage.objects;
+create policy "public_read_booking_proofs"
+  on storage.objects for select
+  to anon, authenticated
+  using (bucket_id = 'booking-proofs');
+
+drop policy if exists "public_insert_booking_proofs" on storage.objects;
+create policy "public_insert_booking_proofs"
+  on storage.objects for insert
+  to anon, authenticated
+  with check (
+    bucket_id = 'booking-proofs'
+    and public.tenant_is_active((storage.foldername(name))[1]::uuid)
+  );
+
+drop policy if exists "tenant_managers_delete_booking_proofs" on storage.objects;
+create policy "tenant_managers_delete_booking_proofs"
+  on storage.objects for delete
+  to authenticated
+  using (
+    bucket_id = 'booking-proofs'
+    and public.can_manage_tenant((storage.foldername(name))[1]::uuid)
+  );
+
+drop policy if exists "public_read_qr_images" on storage.objects;
+create policy "public_read_qr_images"
+  on storage.objects for select
+  to anon, authenticated
+  using (bucket_id = 'qr-images');
+
+drop policy if exists "tenant_managers_insert_qr_images" on storage.objects;
+create policy "tenant_managers_insert_qr_images"
+  on storage.objects for insert
+  to authenticated
+  with check (
+    bucket_id = 'qr-images'
+    and public.can_manage_tenant((storage.foldername(name))[1]::uuid)
+  );
+
+drop policy if exists "tenant_managers_update_qr_images" on storage.objects;
+create policy "tenant_managers_update_qr_images"
+  on storage.objects for update
+  to authenticated
+  using (
+    bucket_id = 'qr-images'
+    and public.can_manage_tenant((storage.foldername(name))[1]::uuid)
+  )
+  with check (
+    bucket_id = 'qr-images'
+    and public.can_manage_tenant((storage.foldername(name))[1]::uuid)
+  );
+
+drop policy if exists "tenant_managers_delete_qr_images" on storage.objects;
+create policy "tenant_managers_delete_qr_images"
+  on storage.objects for delete
+  to authenticated
+  using (
+    bucket_id = 'qr-images'
     and public.can_manage_tenant((storage.foldername(name))[1]::uuid)
   );
 
