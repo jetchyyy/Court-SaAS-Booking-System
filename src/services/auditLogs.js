@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabaseClient';
+import { getCurrentTenantId } from './tenants';
 
 const AUDIT_STORAGE_KEY = 'adminDeveloperAuditLogsV1';
 const DEV_MODE_STORAGE_KEY = 'adminDeveloperModeEnabledV1';
@@ -57,11 +58,13 @@ function mapRemoteRowToLog(row) {
     userEmail: row.user_email,
     metadata: row.metadata,
     timestamp: row.created_at,
+    tenantId: row.tenant_id,
   });
 }
 
-function mapLogToRemoteRow(log) {
+function mapLogToRemoteRow(log, tenantId = null) {
   return {
+    tenant_id: tenantId,
     action: log.action,
     description: log.description,
     user_id: log.userId,
@@ -114,9 +117,13 @@ function persistLogs(logs) {
 async function fetchRemoteLogs({ sinceTimestamp = null } = {}) {
   if (remoteAvailable === false) return null;
 
+  const tenantId = await getCurrentTenantId().catch(() => null);
+  if (!tenantId) return null;
+
   let query = supabase
     .from(AUDIT_REMOTE_TABLE)
-    .select('id, action, description, user_id, user_email, metadata, created_at');
+    .select('id, tenant_id, action, description, user_id, user_email, metadata, created_at')
+    .eq('tenant_id', tenantId);
 
   if (sinceTimestamp) {
     query = query
@@ -169,9 +176,12 @@ function stopRemotePollingIfIdle() {
 async function pushLogToRemote(entry) {
   if (remoteAvailable === false) return;
 
+  const tenantId = await getCurrentTenantId().catch(() => null);
+  if (!tenantId) return;
+
   const { error } = await supabase
     .from(AUDIT_REMOTE_TABLE)
-    .insert([mapLogToRemoteRow(entry)]);
+    .insert([mapLogToRemoteRow(entry, tenantId)]);
 
   if (error) {
     if (isMissingTableError(error) || error.code === '42501') {
@@ -251,13 +261,16 @@ export function clearAuditLogs() {
   persistLogs([]);
 
   return supabase.auth.getUser()
-    .then(({ data }) => {
+    .then(async ({ data }) => {
       const userId = data?.user?.id;
       if (!userId || remoteAvailable === false) return;
+      const tenantId = await getCurrentTenantId().catch(() => null);
+      if (!tenantId) return;
 
       return supabase
         .from(AUDIT_REMOTE_TABLE)
         .delete()
+        .eq('tenant_id', tenantId)
         .eq('user_id', userId)
         .then(({ error }) => {
           if (error) {

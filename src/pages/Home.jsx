@@ -12,6 +12,7 @@ import { Navbar } from '../components/Navbar';
 import { orderCourtsForHomepage } from '../lib/courtDisplayOrder';
 import { listCourts, subscribeToCourts } from '../services/courts';
 import { subscribeToBookings } from '../services/booking';
+import { getCurrentTenant, getCurrentTenantId } from '../services/tenants';
 
 const BOOKING_CACHE_TTL = 30_000;
 const bookingCache = {};
@@ -45,6 +46,8 @@ export function Home() {
     const [blockedSlots, setBlockedSlots] = useState([]);
     const [monthlyBookings, setMonthlyBookings] = useState([]);
     const [validationError, setValidationError] = useState('');
+    const [tenant, setTenant] = useState(null);
+    const [tenantError, setTenantError] = useState('');
 
     const visibleCourts = orderCourtsForHomepage(
         (activeCourts || []).filter((court) => court.is_active !== false)
@@ -55,10 +58,27 @@ export function Home() {
     };
 
     useEffect(() => {
-        loadCourts();
+        getCurrentTenant()
+            .then((resolvedTenant) => {
+                setTenant(resolvedTenant);
+                if (!resolvedTenant?.id) {
+                    setTenantError('No booking site is configured for this domain.');
+                    return;
+                }
+                if (resolvedTenant.is_active === false) {
+                    setTenantError('This booking site is currently unavailable.');
+                    return;
+                }
+                loadCourts();
+            })
+            .catch((err) => {
+                setTenantError(err.message || 'Unable to load this booking site.');
+            });
 
         const subscription = subscribeToCourts((payload) => {
             const { eventType, new: newRecord, old: oldRecord } = payload;
+            const recordTenantId = newRecord?.tenant_id || oldRecord?.tenant_id;
+            if (tenant?.id && recordTenantId && recordTenantId !== tenant.id) return;
             if (eventType === 'INSERT') {
                 setActiveCourts((prev) => [newRecord, ...prev]);
             } else if (eventType === 'UPDATE') {
@@ -73,13 +93,13 @@ export function Home() {
                 subscription.unsubscribe();
             }
         };
-    }, []);
+    }, [tenant?.id]);
 
     const loadCourts = async () => {
         try {
             const courts = await listCourts();
             setActiveCourts(courts || []);
-        } catch (err) {
+        } catch {
             setActiveCourts([]);
         }
     };
@@ -177,7 +197,7 @@ export function Home() {
             const result = bookings || [];
             setCache(bookingCache, cacheKey, result);
             setCourtBookings(result);
-        } catch (err) {
+        } catch {
             setCourtBookings([]);
         }
     };
@@ -201,10 +221,12 @@ export function Home() {
 
         try {
             const { supabase } = await import('../lib/supabaseClient');
+            const tenantId = await getCurrentTenantId();
 
             let query = supabase
                 .from('blocked_time_slots')
                 .select('time_slot')
+                .eq('tenant_id', tenantId)
                 .eq('blocked_date', dateStr);
 
             if (isExclusive && activeCourts.length > 0) {
@@ -222,7 +244,7 @@ export function Home() {
                 setCache(blockedCache, cacheKey, result);
                 setBlockedSlots(result);
             }
-        } catch (err) {
+        } catch {
             setBlockedSlots([]);
         }
     };
@@ -246,9 +268,11 @@ export function Home() {
             const endOfMonthDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0);
 
             const { supabase } = await import('../lib/supabaseClient');
+            const tenantId = await getCurrentTenantId();
             const { data, error } = await supabase
-                .from('bookings')
-                .select('id, court_id, booking_date, start_time, end_time, booked_times, status, courts(id, type)')
+                .from('public_booking_slots')
+                .select('id, court_id, booking_date, start_time, end_time, booked_times, status')
+                .eq('tenant_id', tenantId)
                 .gte('booking_date', format(startOfMonthDate, 'yyyy-MM-dd'))
                 .lte('booking_date', format(endOfMonthDate, 'yyyy-MM-dd'))
                 .in('status', ['Confirmed', 'Rescheduled']);
@@ -256,11 +280,15 @@ export function Home() {
             if (error) {
                 setMonthlyBookings([]);
             } else {
-                const result = data || [];
+                const courtsById = new Map((activeCourts || []).map((court) => [court.id, court]));
+                const result = (data || []).map((booking) => ({
+                    ...booking,
+                    courts: courtsById.get(booking.court_id) || null,
+                }));
                 setCache(monthlyCache, cacheKey, result);
                 setMonthlyBookings(result);
             }
-        } catch (err) {
+        } catch {
             setMonthlyBookings([]);
         }
     };
@@ -480,7 +508,7 @@ export function Home() {
                     if (!proofOfPaymentUrl) {
                         throw new Error('Failed to get upload URL');
                     }
-                } catch (uploadErr) {
+                } catch {
                     throw new Error('Failed to upload proof of payment. Please try again.');
                 }
             }
@@ -515,6 +543,15 @@ export function Home() {
 
     return (
         <div className="min-h-screen bg-bg-user font-sans text-brand-green-dark selection:bg-brand-orange-light selection:text-brand-orange">
+            {tenantError ? (
+                <div className="min-h-screen grid place-items-center bg-bg-user px-4">
+                    <div className="max-w-md rounded-2xl bg-white border border-gray-100 shadow-sm p-6 text-center">
+                        <h1 className="text-2xl font-display font-bold text-brand-green-dark">Booking Unavailable</h1>
+                        <p className="mt-3 text-gray-600">{tenantError}</p>
+                    </div>
+                </div>
+            ) : (
+            <>
             <Navbar />
             <Hero />
             <Offers />
@@ -580,6 +617,8 @@ export function Home() {
                 bookingData={{ court: selectedCourt, date: selectedDate, times: selectedTimes }}
                 onConfirm={handleBookingConfirm}
             />
+            </>
+            )}
         </div>
     );
 }

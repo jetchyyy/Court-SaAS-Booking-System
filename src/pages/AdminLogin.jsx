@@ -2,7 +2,8 @@ import { Lock, Mail } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui';
-import { signIn } from '../services/auth';
+import { signIn, signOut } from '../services/auth';
+import { getCurrentTenant, getTenantMembership } from '../services/tenants';
 
 export function AdminLogin() {
     const [email, setEmail] = useState('');
@@ -16,7 +17,11 @@ export function AdminLogin() {
         const checkAuth = async () => {
             const { data } = await import('../lib/supabaseClient').then(m => m.supabase.auth.getSession());
             if (data?.session) {
-                navigate('/admin/dashboard');
+                const tenant = await getCurrentTenant();
+                const membership = await getTenantMembership(tenant?.id);
+                if (membership) {
+                    navigate('/admin/dashboard');
+                }
             }
         };
         checkAuth();
@@ -29,6 +34,12 @@ export function AdminLogin() {
 
         try {
             await signIn(email, password);
+            const tenant = await getCurrentTenant();
+            const membership = await getTenantMembership(tenant?.id);
+            if (!membership) {
+                await signOut();
+                throw new Error('This account is not allowed to manage this booking site.');
+            }
             navigate('/admin/dashboard');
         } catch (err) {
             setError(err.message || 'Invalid credentials. Please try again.');

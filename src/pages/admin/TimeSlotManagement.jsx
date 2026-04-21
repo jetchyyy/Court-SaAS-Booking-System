@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '../../components/ui';
 import { supabase } from '../../lib/supabaseClient';
 import { appendAuditLog } from '../../services/auditLogs';
+import { getCurrentTenantId } from '../../services/tenants';
 
 export function TimeSlotManagement() {
     const today = startOfToday();
@@ -19,9 +20,11 @@ export function TimeSlotManagement() {
     const { data: courts = [] } = useQuery({
         queryKey: ['courts'],
         queryFn: async () => {
+            const tenantId = await getCurrentTenantId();
             const { data, error } = await supabase
                 .from('courts')
                 .select('*')
+                .eq('tenant_id', tenantId)
                 .order('name');
 
             if (error) throw error;
@@ -76,8 +79,10 @@ export function TimeSlotManagement() {
         queryKey: isExclusiveCourt ? ['blockedSlots', 'all-courts', dateStr] : ['blockedSlots', selectedCourt?.id, dateStr],
         queryFn: async () => {
             if (!selectedCourt) return [];
+            const tenantId = await getCurrentTenantId();
 
             let q = supabase.from('blocked_time_slots').select('*').eq('blocked_date', dateStr);
+            q = q.eq('tenant_id', tenantId);
             if (isExclusiveCourt && courts.length > 0) {
                 q = q.in('court_id', courts.map(c => c.id));
             } else {
@@ -98,10 +103,12 @@ export function TimeSlotManagement() {
         queryKey: isExclusiveCourt ? ['bookedSlots', 'all-courts', dateStr] : ['bookedSlots', selectedCourt?.id, dateStr],
         queryFn: async () => {
             if (!selectedCourt) return [];
+            const tenantId = await getCurrentTenantId();
 
             const { data, error } = await supabase
                 .from('bookings')
                 .select('*, courts(id, type)')
+                .eq('tenant_id', tenantId)
                 .eq('booking_date', dateStr)
                 .in('status', ['Confirmed', 'Rescheduled']);
 
@@ -124,9 +131,11 @@ export function TimeSlotManagement() {
     // Mutation for blocking slots
     const blockSlotsMutation = useMutation({
         mutationFn: async (slots) => {
+            const tenantId = await getCurrentTenantId();
             const courtIds = isExclusiveCourt ? courts.map(c => c.id) : [selectedCourt.id];
             const blocksToInsert = courtIds.flatMap(courtId =>
                 slots.map(slot => ({
+                    tenant_id: tenantId,
                     court_id: courtId,
                     blocked_date: dateStr,
                     time_slot: slot,
@@ -176,10 +185,12 @@ export function TimeSlotManagement() {
     // Mutation for unblocking slots
     const unblockSlotsMutation = useMutation({
         mutationFn: async (slots) => {
+            const tenantId = await getCurrentTenantId();
             const courtIds = isExclusiveCourt ? courts.map(c => c.id) : [selectedCourt.id];
             const { error } = await supabase
                 .from('blocked_time_slots')
                 .delete()
+                .eq('tenant_id', tenantId)
                 .in('court_id', courtIds)
                 .eq('blocked_date', dateStr)
                 .in('time_slot', slots);

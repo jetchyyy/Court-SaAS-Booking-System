@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabaseClient';
 import { appendAuditLog } from './auditLogs';
+import { getCurrentTenantId } from './tenants';
 
 // --- Simple in-memory cache for listCourts ---
 const CACHE_TTL_MS = 30_000; // 30 seconds
@@ -12,6 +13,7 @@ export function invalidateCourtsCache() {
 // Upload images to storage
 export async function uploadCourtImages(files) {
   const results = [];
+  const tenantId = await getCurrentTenantId();
 
   console.log(`[uploadCourtImages] Starting upload for ${files.length} file(s)`);
 
@@ -39,7 +41,7 @@ export async function uploadCourtImages(files) {
       }
     }
 
-    const unique = `${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
+    const unique = `${tenantId}/${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
     console.log(`[uploadCourtImages] Uploading as: ${unique}, contentType: ${originalType || 'image/jpeg'}`);
 
     const { error } = await supabase.storage
@@ -71,8 +73,9 @@ export async function uploadCourtImages(files) {
 
 // List all courts (cached)
 export async function listCourts({ force = false } = {}) {
+  const tenantId = await getCurrentTenantId();
   const now = Date.now();
-  if (!force && courtsCache && now - courtsCache.timestamp < CACHE_TTL_MS) {
+  if (!force && courtsCache?.tenantId === tenantId && now - courtsCache.timestamp < CACHE_TTL_MS) {
     console.log('[listCourts] Returning cached data');
     return courtsCache.data;
   }
@@ -80,6 +83,7 @@ export async function listCourts({ force = false } = {}) {
   const { data, error } = await supabase
     .from('courts')
     .select('*')
+    .eq('tenant_id', tenantId)
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -87,15 +91,17 @@ export async function listCourts({ force = false } = {}) {
     return [];
   }
 
-  courtsCache = { data, timestamp: now };
+  courtsCache = { tenantId, data, timestamp: now };
   return data;
 }
 
 // Get single court with bookings
 export async function getCourt(courtId) {
+  const tenantId = await getCurrentTenantId();
   const { data, error } = await supabase
     .from('courts')
     .select('*, bookings(*)')
+    .eq('tenant_id', tenantId)
     .eq('id', courtId)
     .single();
 
@@ -109,6 +115,7 @@ export async function getCourt(courtId) {
 
 // Create court (admin only)
 export async function createCourt({ name, type, price, description, imageFiles, pricingRules, maxPlayers }) {
+  const tenantId = await getCurrentTenantId();
   const images = await uploadCourtImages(Array.from(imageFiles || []));
 
   const { data: user } = await supabase.auth.getUser();
@@ -117,6 +124,7 @@ export async function createCourt({ name, type, price, description, imageFiles, 
     .from('courts')
     .insert([{
       name,
+      tenant_id: tenantId,
       type,
       price,
       description,
@@ -150,6 +158,7 @@ export async function createCourt({ name, type, price, description, imageFiles, 
 
 // Update court (admin only)
 export async function updateCourt(courtId, { name, type, price, description, imageFiles, pricingRules, maxPlayers }) {
+  const tenantId = await getCurrentTenantId();
   // Upload new images if provided
   let newImages = [];
   const filesArray = imageFiles ? Array.from(imageFiles) : [];
@@ -161,6 +170,7 @@ export async function updateCourt(courtId, { name, type, price, description, ima
     const { data: currentCourt } = await supabase
       .from('courts')
       .select('images')
+      .eq('tenant_id', tenantId)
       .eq('id', courtId)
       .single();
 
@@ -201,6 +211,7 @@ export async function updateCourt(courtId, { name, type, price, description, ima
   const { data, error } = await supabase
     .from('courts')
     .update(updateData)
+    .eq('tenant_id', tenantId)
     .eq('id', courtId)
     .select();
 
@@ -233,9 +244,11 @@ export async function updateCourt(courtId, { name, type, price, description, ima
 
 // Toggle court active status (admin only)
 export async function toggleCourtStatus(courtId, isActive) {
+  const tenantId = await getCurrentTenantId();
   const { data, error } = await supabase
     .from('courts')
     .update({ is_active: isActive })
+    .eq('tenant_id', tenantId)
     .eq('id', courtId)
     .select();
 
@@ -267,9 +280,11 @@ export async function toggleCourtStatus(courtId, isActive) {
 
 // Delete court (admin only)
 export async function deleteCourt(courtId) {
+  const tenantId = await getCurrentTenantId();
   const { data: court } = await supabase
     .from('courts')
     .select('images')
+    .eq('tenant_id', tenantId)
     .eq('id', courtId)
     .single();
 
@@ -283,6 +298,7 @@ export async function deleteCourt(courtId) {
   await supabase
     .from('blocked_time_slots')
     .delete()
+    .eq('tenant_id', tenantId)
     .eq('court_id', courtId)
     .throwOnError()
     .catch((err) => {
@@ -292,6 +308,7 @@ export async function deleteCourt(courtId) {
   const { data, error } = await supabase
     .from('courts')
     .delete()
+    .eq('tenant_id', tenantId)
     .eq('id', courtId)
     .select();
 

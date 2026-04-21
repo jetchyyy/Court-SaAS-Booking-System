@@ -1,0 +1,2 @@
+[functions.onboard-tenant-owner]
+verify_jwt = false

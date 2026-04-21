@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabaseClient';
 import { appendAuditLog } from './auditLogs';
+import { getCurrentTenantId, getTenantMembership } from './tenants';
 
 // --- Simple in-memory cache for getCurrentUser ---
 const USER_CACHE_TTL_MS = 60_000; // 60 seconds
@@ -20,10 +21,15 @@ export async function signUp(email, password) {
 
   // Optionally add to admin_users table
   if (data.user) {
-    await supabase.from('admin_users').insert([{
-      id: data.user.id,
-      email: data.user.email
-    }]);
+    const tenantId = await getCurrentTenantId().catch(() => null);
+    if (tenantId) {
+      await supabase.from('tenant_members').insert([{
+        tenant_id: tenantId,
+        user_id: data.user.id,
+        email: data.user.email,
+        role: 'owner_admin',
+      }]);
+    }
 
     appendAuditLog({
       action: 'admin.auth.signup',
@@ -88,13 +94,9 @@ export async function isAdmin() {
 
   if (!user) return false;
 
-  const { data } = await supabase
-    .from('admin_users')
-    .select('*')
-    .eq('id', user.id)
-    .single();
-
-  return !!data;
+  const tenantId = await getCurrentTenantId().catch(() => null);
+  if (!tenantId) return false;
+  return !!(await getTenantMembership(tenantId));
 }
 
 /**
@@ -104,44 +106,40 @@ export async function isAdmin() {
  * @returns {Promise} - Resolves if successful, rejects with error if not
  */
 export async function changePassword(currentPassword, newPassword) {
-  try {
-    // First, verify the current password by attempting to sign in
-    const user = await getCurrentUser();
+  // First, verify the current password by attempting to sign in
+  const user = await getCurrentUser();
 
-    if (!user || !user.email) {
-      throw new Error('No authenticated user found');
-    }
+  if (!user || !user.email) {
+    throw new Error('No authenticated user found');
+  }
 
-    // Verify current password by attempting to sign in
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      email: user.email,
-      password: currentPassword,
-    });
+  // Verify current password by attempting to sign in
+  const { error: signInError } = await supabase.auth.signInWithPassword({
+    email: user.email,
+    password: currentPassword,
+  });
 
-    if (signInError) {
-      throw new Error('Current password is incorrect');
-    }
+  if (signInError) {
+    throw new Error('Current password is incorrect');
+  }
 
-    // If current password is correct, update to new password
-    const { data, error } = await supabase.auth.updateUser({
-      password: newPassword,
-    });
+  // If current password is correct, update to new password
+  const { data, error } = await supabase.auth.updateUser({
+    password: newPassword,
+  });
 
-    if (error) {
-      throw error;
-    }
-
-    appendAuditLog({
-      action: 'admin.auth.change_password',
-      description: 'Admin changed password',
-      userId: user.id,
-      userEmail: user.email
-    });
-
-    return data;
-  } catch (error) {
+  if (error) {
     throw error;
   }
+
+  appendAuditLog({
+    action: 'admin.auth.change_password',
+    description: 'Admin changed password',
+    userId: user.id,
+    userEmail: user.email
+  });
+
+  return data;
 }
 
 /**

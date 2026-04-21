@@ -7,6 +7,7 @@ import { RescheduleModal } from '../../components/admin/Reschedulemodal';
 import { AdminActionModal } from '../../components/admin/AdminActionModal';
 import { getAllBookings, getSingleBooking, updateBookingStatus, subscribeToBookings, rescheduleBooking, invalidateAllBookingsCache } from '../../services/booking';
 import { supabase } from '../../lib/supabaseClient';
+import { getCurrentTenantId } from '../../services/tenants';
 
 export function AdminBookings() {
     const [bookings, setBookings] = useState([]);
@@ -237,6 +238,7 @@ export function AdminBookings() {
                     const { data, error } = await supabase
                         .from('bookings')
                         .delete()
+                        .eq('tenant_id', await getCurrentTenantId())
                         .eq('id', booking.id)
                         .select();
 

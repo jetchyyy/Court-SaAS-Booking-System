@@ -1,4 +1,6 @@
 import { supabase } from '../lib/supabaseClient';
+import { getCurrentTenantId } from './tenants';
+import { listCourts } from './courts';
 
 // --- In-memory cache for getAllBookings (admin) ---
 const ALL_BOOKINGS_CACHE_TTL = 30_000; // 30 seconds
@@ -111,8 +113,9 @@ export async function uploadProofOfPayment(file, bookingId) {
     }
 
     const fileExt = file.name.split('.').pop();
+    const tenantId = await getCurrentTenantId();
     const fileName = `${bookingId}-${Date.now()}.${fileExt}`;
-    const filePath = `booking-proofs/${fileName}`;
+    const filePath = `${tenantId}/${fileName}`;
 
     const { error: uploadError } = await supabase.storage
       .from('booking-proofs')
@@ -142,9 +145,11 @@ export async function uploadProofOfPayment(file, bookingId) {
 
 // Get bookings for a court on a specific date
 export async function getCourtBookings(courtId, date) {
+  const tenantId = await getCurrentTenantId();
   const { data, error } = await supabase
-    .from('bookings')
+    .from('public_booking_slots')
     .select('*')
+    .eq('tenant_id', tenantId)
     .eq('court_id', courtId)
     .eq('booking_date', date)
     .in('status', ['Confirmed', 'Rescheduled']);
@@ -159,9 +164,11 @@ export async function getCourtBookings(courtId, date) {
 
 // Get ALL bookings for a specific date (for conflict checks)
 export async function getDailyBookings(date) {
+  const tenantId = await getCurrentTenantId();
   const { data, error } = await supabase
-    .from('bookings')
-    .select('*, courts(id, name, type)')
+    .from('public_booking_slots')
+    .select('*')
+    .eq('tenant_id', tenantId)
     .eq('booking_date', date)
     .in('status', ['Confirmed', 'Rescheduled']);
 
@@ -170,7 +177,12 @@ export async function getDailyBookings(date) {
     return [];
   }
 
-  return data;
+  const courts = await listCourts();
+  const courtsById = new Map((courts || []).map((court) => [court.id, court]));
+  return (data || []).map((booking) => ({
+    ...booking,
+    courts: courtsById.get(booking.court_id) || null,
+  }));
 }
 
 // Check for time slot conflicts before booking
@@ -178,6 +190,7 @@ export async function getDailyBookings(date) {
 // Bug 3 fix: excludeBookingId allows reschedule to skip itself
 export async function checkTimeSlotConflicts(courtId, bookingDate, bookedTimes, { courtType = '', excludeBookingId = null } = {}) {
   try {
+    const tenantId = await getCurrentTenantId();
     const isExclusiveBooking = courtType?.includes('Exclusive') || courtType?.includes('Whole');
 
     // --- Check admin-blocked slots first ---
@@ -185,6 +198,7 @@ export async function checkTimeSlotConflicts(courtId, bookingDate, bookedTimes, 
       let blockedQuery = supabase
         .from('blocked_time_slots')
         .select('time_slot, court_id')
+        .eq('tenant_id', tenantId)
         .eq('blocked_date', bookingDate);
 
       if (isExclusiveBooking) {
@@ -219,9 +233,10 @@ export async function checkTimeSlotConflicts(courtId, bookingDate, bookedTimes, 
 
     // Query ALL bookings for this date (not just one court)
     // This ensures we catch exclusive/whole court conflicts across courts
-    const { data: existingBookings, error } = await supabase
-      .from('bookings')
-      .select('booked_times, start_time, end_time, id, court_id, courts(id, type)')
+    const { data: existingBookingRows, error } = await supabase
+      .from('public_booking_slots')
+      .select('booked_times, start_time, end_time, id, court_id')
+      .eq('tenant_id', tenantId)
       .eq('booking_date', bookingDate)
       .in('status', ['Confirmed', 'Rescheduled']);
 
@@ -230,9 +245,16 @@ export async function checkTimeSlotConflicts(courtId, bookingDate, bookedTimes, 
       throw new Error(`Failed to check conflicts: ${error.message}`);
     }
 
-    if (!existingBookings || existingBookings.length === 0) {
+    if (!existingBookingRows || existingBookingRows.length === 0) {
       return { hasConflict: false, conflicts: [] };
     }
+
+    const courts = await listCourts();
+    const courtsById = new Map((courts || []).map((court) => [court.id, court]));
+    const existingBookings = existingBookingRows.map((booking) => ({
+      ...booking,
+      courts: courtsById.get(booking.court_id) || null,
+    }));
 
     // Check for overlapping time slots with cross-court exclusive logic
     const conflicts = [];
@@ -312,6 +334,7 @@ export async function createBooking({
 }) {
   if (typeof globalThis !== 'undefined') {
     try {
+      const tenantId = await getCurrentTenantId();
       console.log('Starting booking creation...', { courtId, bookingDate, bookedTimes });
 
       if (!courtId || !customerName || !customerEmail || !customerPhone || !bookingDate) {
@@ -335,6 +358,7 @@ export async function createBooking({
       }
 
       const { data, error } = await supabase.rpc('create_booking_atomic', {
+        p_tenant_id: tenantId,
         p_court_id: courtId,
         p_customer_name: customerName,
         p_customer_email: customerEmail,
@@ -380,6 +404,7 @@ export async function createBooking({
       const { data: verifyData, error: verifyError } = await supabase
         .from('bookings')
         .select('*, courts(name, type)')
+        .eq('tenant_id', tenantId)
         .eq('id', data.id)
         .single();
 
@@ -429,9 +454,11 @@ export async function createBooking({
       console.log('No conflicts found. Proceeding with booking...');
 
       // Step 3: Insert the booking
+      const tenantId = await getCurrentTenantId();
       const { data, error } = await supabase
         .from('bookings')
         .insert([{
+          tenant_id: tenantId,
           court_id: courtId,
           customer_name: customerName,
           customer_email: customerEmail,
@@ -488,7 +515,7 @@ export async function createBooking({
       if (postInsertCheck.hasConflict) {
         // Race condition detected! Delete our booking and report conflict.
         console.error('Race condition detected! Deleting duplicate booking:', bookingId);
-        await supabase.from('bookings').delete().eq('id', bookingId);
+        await supabase.from('bookings').delete().eq('tenant_id', tenantId).eq('id', bookingId);
 
         // Also remove the orphaned proof of payment from storage (best-effort).
         if (proofOfPaymentUrl) {
@@ -519,6 +546,7 @@ export async function createBooking({
       const { data: verifyData, error: verifyError } = await supabase
         .from('bookings')
         .select('*, courts(name, type)')
+        .eq('tenant_id', tenantId)
         .eq('id', bookingId)
         .single();
 
@@ -551,17 +579,19 @@ export async function createBooking({
 
 // Get all bookings (admin) — cached for full fetch, uncached for filtered fetches
 export async function getAllBookings({ force = false, createdAtFrom = null, createdAtTo = null } = {}) {
+  const tenantId = await getCurrentTenantId();
   const now = Date.now();
   const hasCreatedAtFilter = Boolean(createdAtFrom || createdAtTo);
 
-  if (!force && !hasCreatedAtFilter && allBookingsCache && now - allBookingsCache.timestamp < ALL_BOOKINGS_CACHE_TTL) {
+  if (!force && !hasCreatedAtFilter && allBookingsCache?.tenantId === tenantId && now - allBookingsCache.timestamp < ALL_BOOKINGS_CACHE_TTL) {
     console.log('[getAllBookings] Returning cached data');
     return allBookingsCache.data;
   }
 
   let query = supabase
     .from('bookings')
-    .select('*, courts(name, type, price, pricing_rules)');
+    .select('*, courts(name, type, price, pricing_rules)')
+    .eq('tenant_id', tenantId);
 
   if (createdAtFrom) {
     query = query.gte('created_at', createdAtFrom);
@@ -579,7 +609,7 @@ export async function getAllBookings({ force = false, createdAtFrom = null, crea
   }
 
   if (!hasCreatedAtFilter) {
-    allBookingsCache = { data, timestamp: now };
+    allBookingsCache = { tenantId, data, timestamp: now };
   }
 
   return data;
@@ -591,9 +621,11 @@ export async function getBookingsByDateRange({
   toDate,
   includeCancelled = false,
 }) {
+  const tenantId = await getCurrentTenantId();
   let query = supabase
     .from('bookings')
     .select('*, courts(name, type, price, pricing_rules)')
+    .eq('tenant_id', tenantId)
     .gte('booking_date', fromDate)
     .lte('booking_date', toDate)
     .order('booking_date', { ascending: true })
@@ -615,9 +647,11 @@ export async function getBookingsByDateRange({
 
 // Count bookings created within a created_at interval (lightweight egress)
 export async function getCreatedBookingsCount({ createdAtFrom, createdAtTo }) {
+  const tenantId = await getCurrentTenantId();
   let query = supabase
     .from('bookings')
-    .select('id', { count: 'exact', head: true });
+    .select('id', { count: 'exact', head: true })
+    .eq('tenant_id', tenantId);
 
   if (createdAtFrom) {
     query = query.gte('created_at', createdAtFrom);
@@ -639,9 +673,11 @@ export async function getCreatedBookingsCount({ createdAtFrom, createdAtTo }) {
 
 // Update booking status (admin)
 export async function updateBookingStatus(bookingId, status) {
+  const tenantId = await getCurrentTenantId();
   const { data, error } = await supabase
     .from('bookings')
     .update({ status })
+    .eq('tenant_id', tenantId)
     .eq('id', bookingId)
     .select();
 
@@ -656,9 +692,11 @@ export async function updateBookingStatus(bookingId, status) {
 
 // Fetch a single booking by id (with court join) — used for incremental real-time updates
 export async function getSingleBooking(id) {
+  const tenantId = await getCurrentTenantId();
   const { data, error } = await supabase
     .from('bookings')
     .select('*, courts(name, type, price, pricing_rules)')
+    .eq('tenant_id', tenantId)
     .eq('id', id)
     .single();
 
@@ -692,10 +730,12 @@ export async function rescheduleBooking({
   originalBookedTimes
 }) {
   try {
+    const tenantId = await getCurrentTenantId();
     if (typeof globalThis !== 'undefined') {
       const { data: checkData, error: checkError } = await supabase
         .from('bookings')
         .select('id, status, booking_date, booked_times, total_price, court_id')
+        .eq('tenant_id', tenantId)
         .eq('id', bookingId)
         .single();
 
@@ -710,6 +750,7 @@ export async function rescheduleBooking({
       const { data: courtData } = await supabase
         .from('courts')
         .select('type')
+        .eq('tenant_id', tenantId)
         .eq('id', checkData.court_id)
         .single();
 
@@ -733,6 +774,7 @@ export async function rescheduleBooking({
       }
 
       const { data, error } = await supabase.rpc('reschedule_booking_atomic', {
+        p_tenant_id: tenantId,
         p_booking_id: bookingId,
         p_new_date: newDate,
         p_new_start_time: newStartTime,
@@ -768,6 +810,7 @@ export async function rescheduleBooking({
       const { data: verifyData, error: verifyError } = await supabase
         .from('bookings')
         .select('*, courts(name, type, price, pricing_rules)')
+        .eq('tenant_id', tenantId)
         .eq('id', data.id)
         .single();
 
@@ -783,6 +826,7 @@ export async function rescheduleBooking({
     const { data: checkData, error: checkError } = await supabase
       .from('bookings')
       .select('id, status, booking_date, booked_times, total_price, court_id')
+      .eq('tenant_id', tenantId)
       .eq('id', bookingId)
       .single();
 
@@ -798,6 +842,7 @@ export async function rescheduleBooking({
     const { data: courtData } = await supabase
       .from('courts')
       .select('type')
+      .eq('tenant_id', tenantId)
       .eq('id', checkData.court_id)
       .single();
 
@@ -836,6 +881,7 @@ export async function rescheduleBooking({
     const { data, error } = await supabase
       .from('bookings')
       .update(updatePayload)
+      .eq('tenant_id', tenantId)
       .eq('id', bookingId)
       .select('*, courts(name, type, price, pricing_rules)');
 

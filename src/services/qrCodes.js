@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabaseClient';
 import { appendAuditLog } from './auditLogs';
+import { getCurrentTenantId } from './tenants';
 
 export const MAX_QR_FILE_SIZE_MB = 5;
 
@@ -76,36 +77,42 @@ export function invalidateQrCache() {
 }
 
 export async function getQrCodes({ activeOnly = false } = {}) {
+  const tenantId = await getCurrentTenantId();
   const now = Date.now();
-  if (qrCache && qrCacheTimestamp && now - qrCacheTimestamp < QR_CACHE_TTL) {
-    return filterOptions(qrCache, activeOnly);
+  if (qrCache?.tenantId === tenantId && qrCacheTimestamp && now - qrCacheTimestamp < QR_CACHE_TTL) {
+    return filterOptions(qrCache.options || [], activeOnly);
   }
 
   try {
     const { data, error } = await supabase
       .from('qr_codes')
       .select('*')
+      .eq('tenant_id', tenantId)
       .order('sort_order', { ascending: true })
       .order('label', { ascending: true });
 
     if (error || !data || data.length === 0) {
-      qrCache = sortQrCodes(DEFAULT_QR_OPTIONS.map(normalizeQrCode));
+      qrCache = { tenantId, options: sortQrCodes(DEFAULT_QR_OPTIONS.map(normalizeQrCode)) };
       qrCacheTimestamp = now;
-      return filterOptions(qrCache, activeOnly);
+      return filterOptions(qrCache.options, activeOnly);
     }
 
     const normalized = sortQrCodes(data.map(normalizeQrCode));
-    qrCache = normalized.length > 0
+    qrCache = {
+      tenantId,
+      options: normalized.length > 0
       ? normalized
-      : sortQrCodes(DEFAULT_QR_OPTIONS.map(normalizeQrCode));
+      : sortQrCodes(DEFAULT_QR_OPTIONS.map(normalizeQrCode)),
+    };
     qrCacheTimestamp = now;
-    return filterOptions(qrCache, activeOnly);
+    return filterOptions(qrCache.options, activeOnly);
   } catch {
     return filterOptions(sortQrCodes(DEFAULT_QR_OPTIONS.map(normalizeQrCode)), activeOnly);
   }
 }
 
 export async function uploadQrImage(provider, file) {
+  const tenantId = await getCurrentTenantId();
   if (file.size > MAX_QR_FILE_SIZE_MB * 1024 * 1024) {
     throw new Error(`File is too large. Maximum size is ${MAX_QR_FILE_SIZE_MB} MB.`);
   }
@@ -128,7 +135,7 @@ export async function uploadQrImage(provider, file) {
 
   const ext = fileToUpload.name.split('.').pop() || 'jpg';
   const safeProvider = String(provider || 'payment').replace(/[^a-zA-Z0-9_-]/g, '-');
-  const path = `${safeProvider}_qr.${ext}`;
+  const path = `${tenantId}/${safeProvider}_qr.${ext}`;
 
   const { error } = await supabase.storage
     .from('qr-images')
@@ -162,7 +169,9 @@ export async function updateQrCode(provider, updates) {
 }
 
 async function saveQrCode(provider, updates, actionLabel) {
+  const tenantId = await getCurrentTenantId();
   const payload = {
+    tenant_id: tenantId,
     id: provider,
     updated_at: new Date().toISOString(),
   };

@@ -6,6 +6,7 @@ import { getCurrentUser, signOut } from '../services/auth';
 import { AdminActionModal } from '../components/admin/AdminActionModal';
 import { DeveloperAuditPanel } from '../components/admin/DeveloperAuditPanel';
 import { appendAuditLog } from '../services/auditLogs';
+import { getCurrentTenant, getTenantMembership } from '../services/tenants';
 
 export function AdminLayout() {
     const navigate = useNavigate();
@@ -13,6 +14,7 @@ export function AdminLayout() {
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+    const [tenant, setTenant] = useState(null);
 
     const [actionModal, setActionModal] = useState({
         isOpen: false,
@@ -39,6 +41,14 @@ export function AdminLayout() {
                 if (!currentUser) {
                     navigate('/admin');
                 } else {
+                    const resolvedTenant = await getCurrentTenant();
+                    const membership = await getTenantMembership(resolvedTenant?.id);
+                    if (!resolvedTenant?.id || !membership) {
+                        await signOut();
+                        navigate('/admin');
+                        return;
+                    }
+                    setTenant(resolvedTenant);
                     setUser(currentUser);
                 }
             } catch (err) {
@@ -110,7 +120,7 @@ export function AdminLayout() {
                     <div className="bg-brand-orange p-1.5 rounded-lg">
                         <span className="text-white font-bold text-sm">PP</span>
                     </div>
-                    <span className="font-display font-bold text-lg text-brand-green-dark">Admin Panel</span>
+                    <span className="font-display font-bold text-lg text-brand-green-dark">{tenant?.name || 'Admin Panel'}</span>
                 </div>
 
                 <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
@@ -148,7 +158,7 @@ export function AdminLayout() {
                     <div className="bg-brand-orange p-1.5 rounded-lg">
                         <span className="text-white font-bold text-sm">PP</span>
                     </div>
-                    <span className="font-display font-bold text-lg text-brand-green-dark">Admin Panel</span>
+                    <span className="font-display font-bold text-lg text-brand-green-dark">{tenant?.name || 'Admin Panel'}</span>
                 </div>
                 <button
                     onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}

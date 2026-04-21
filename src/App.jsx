@@ -14,6 +14,10 @@ const ChangePassword = lazy(() => import('./pages/admin/AdminChangepassword').th
 const TimeSlotManagement = lazy(() => import('./pages/admin/TimeSlotManagement').then((module) => ({ default: module.TimeSlotManagement })));
 const AdminQRCodes = lazy(() => import('./pages/admin/AdminQRCodes').then((module) => ({ default: module.AdminQRCodes })));
 const Home = lazy(() => import('./pages/Home').then((module) => ({ default: module.Home })));
+const SuperAdminLogin = lazy(() => import('./pages/SuperAdminLogin').then((module) => ({ default: module.SuperAdminLogin })));
+const SuperAdminLayout = lazy(() => import('./layouts/SuperAdminLayout').then((module) => ({ default: module.SuperAdminLayout })));
+const OdcDashboard = lazy(() => import('./pages/odc/OdcDashboard').then((module) => ({ default: module.OdcDashboard })));
+const OdcBilling = lazy(() => import('./pages/odc/OdcBilling').then((module) => ({ default: module.OdcBilling })));
 
 function RouteFallback() {
   return (
@@ -32,6 +36,7 @@ function App() {
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/admin" element={<AdminLogin />} />
+            <Route path="/odc" element={<SuperAdminLogin />} />
 
             {/* Protected Admin Routes */}
             <Route path="/admin" element={<AdminLayout />}>
@@ -43,6 +48,11 @@ function App() {
               <Route path="change-password" element={<ChangePassword />} />
               <Route path="time-slots" element={<TimeSlotManagement />} />
               <Route path="qr-codes" element={<AdminQRCodes />} />
+            </Route>
+
+            <Route path="/odc" element={<SuperAdminLayout />}>
+              <Route path="dashboard" element={<OdcDashboard />} />
+              <Route path="billing" element={<OdcBilling />} />
             </Route>
           </Routes>
         </Suspense>
