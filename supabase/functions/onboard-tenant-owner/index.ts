@@ -46,6 +46,23 @@ function buildDefaultSiteContent(tenant: {
       logoUrl: '',
       shortLocation: 'Your Location',
     },
+    splash: {
+      enabled: true,
+      title: tenant.name,
+      subtitle: 'Welcome',
+      logoUrl: '',
+      initials: tenant.name
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((word) => word[0])
+        .join('')
+        .toUpperCase() || 'PC',
+      backgroundColor: '#174034',
+      accentColor: '#f97316',
+      textColor: '#ffffff',
+      durationMs: 2000,
+    },
     sections: [
       { id: 'hero', label: 'Hero', enabled: true },
       { id: 'offers', label: 'Offers', enabled: true },

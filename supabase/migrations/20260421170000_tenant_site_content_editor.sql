@@ -12,11 +12,13 @@ for each row execute function public.touch_updated_at();
 
 alter table public.tenant_site_content enable row level security;
 
+drop policy if exists "public_read_active_tenant_site_content" on public.tenant_site_content;
 create policy "public_read_active_tenant_site_content"
   on public.tenant_site_content for select
   to anon, authenticated
   using (public.tenant_is_active(tenant_id) or public.can_manage_tenant(tenant_id));
 
+drop policy if exists "tenant_managers_manage_site_content" on public.tenant_site_content;
 create policy "tenant_managers_manage_site_content"
   on public.tenant_site_content for all
   to authenticated
@@ -73,6 +75,17 @@ select
       'name', coalesce(nullif(t.name, ''), 'Pickleball Courts'),
       'logoUrl', coalesce(nullif(t.logo_url, ''), ''),
       'shortLocation', 'Mandaue City'
+    ),
+    'splash', jsonb_build_object(
+      'enabled', true,
+      'title', coalesce(nullif(t.name, ''), 'The Pickle Point'),
+      'subtitle', 'Cebu',
+      'logoUrl', coalesce(nullif(t.logo_url, ''), ''),
+      'initials', 'PP',
+      'backgroundColor', '#174034',
+      'accentColor', '#f97316',
+      'textColor', '#ffffff',
+      'durationMs', 2000
     ),
     'sections', jsonb_build_array(
       jsonb_build_object('id', 'hero', 'label', 'Hero', 'enabled', true),

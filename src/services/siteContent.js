@@ -39,6 +39,23 @@ export function buildDefaultSiteContent(tenant = {}) {
       logoUrl: tenant?.logo_url || '',
       shortLocation: address ? address.split(',')[0] : 'Your Location',
     },
+    splash: {
+      enabled: true,
+      title: tenantName,
+      subtitle: address ? address.split(',')[0] : 'Welcome',
+      logoUrl: tenant?.logo_url || '',
+      initials: tenantName
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((word) => word[0])
+        .join('')
+        .toUpperCase() || 'PC',
+      backgroundColor: '#174034',
+      accentColor: '#f97316',
+      textColor: '#ffffff',
+      durationMs: 2000,
+    },
     sections: defaultSections(),
     hero: {
       eyebrow: 'Courts now open for booking',
@@ -132,6 +149,7 @@ export function normalizeSiteContent(content, tenant = {}) {
     ...defaults,
     ...source,
     brand: { ...defaults.brand, ...(source.brand || {}) },
+    splash: { ...defaults.splash, ...(source.splash || {}) },
     sections: mergeSectionOrder(source.sections),
     hero: {
       ...defaults.hero,

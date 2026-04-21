@@ -285,6 +285,36 @@ export function AdminSiteEditor() {
                             </label>
                         </div>
                     </Panel>
+
+                    <Panel title="Splash Screen">
+                        <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                            <input
+                                type="checkbox"
+                                checked={content.splash.enabled !== false}
+                                onChange={(event) => setPath(['splash', 'enabled'], event.target.checked)}
+                                className="h-4 w-4"
+                            />
+                            Show splash screen
+                        </label>
+                        <TextField label="Splash Title" value={content.splash.title} onChange={(value) => setPath(['splash', 'title'], value)} />
+                        <TextField label="Subtitle" value={content.splash.subtitle} onChange={(value) => setPath(['splash', 'subtitle'], value)} />
+                        <TextField label="Initials" value={content.splash.initials} onChange={(value) => setPath(['splash', 'initials'], value.toUpperCase().slice(0, 3))} />
+                        <TextField label="Duration (milliseconds)" type="number" value={content.splash.durationMs} onChange={(value) => setPath(['splash', 'durationMs'], Number(value) || 2000)} />
+                        <div className="grid grid-cols-3 gap-3">
+                            <TextField label="Background" type="color" value={content.splash.backgroundColor} onChange={(value) => setPath(['splash', 'backgroundColor'], value)} />
+                            <TextField label="Accent" type="color" value={content.splash.accentColor} onChange={(value) => setPath(['splash', 'accentColor'], value)} />
+                            <TextField label="Text" type="color" value={content.splash.textColor} onChange={(value) => setPath(['splash', 'textColor'], value)} />
+                        </div>
+                        <div>
+                            <span className="block text-sm font-medium text-gray-700 mb-1">Splash Logo</span>
+                            {content.splash.logoUrl && <img src={content.splash.logoUrl} alt="Splash logo preview" className="mb-2 h-16 w-16 rounded-xl object-cover border border-gray-200" />}
+                            <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-brand-green px-4 py-2 text-sm font-semibold text-brand-green-dark hover:bg-brand-green-light">
+                                <ImagePlus size={16} />
+                                {uploadingKey === 'splash-logo' ? 'Uploading...' : 'Upload Splash Logo'}
+                                <input type="file" accept="image/*" className="sr-only" onChange={(event) => handleImageUpload(event.target.files?.[0], ['splash', 'logoUrl'], 'splash-logo')} />
+                            </label>
+                        </div>
+                    </Panel>
                 </div>
 
                 <div className="space-y-6">
